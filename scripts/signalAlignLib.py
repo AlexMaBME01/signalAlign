@@ -505,7 +505,7 @@ class Bwa(object):
     @staticmethod
     def align(bwa_index, query, output_sam_path, outerr=None):
         for suff in Bwa.suffixes():
-            assert os.path.exists(bwa_index + suff),\
+            assert os.path.exists(bwa_index + suff), \
                 "[Bwa::align] Didn't find index files {}".format(bwa_index + suff)
         assert os.path.exists(query), "[Bwa::align] Didn't find query file {}".format(query)
         cmd = "bwa mem -x ont2d {idx} {query}".format(idx=bwa_index, query=query)
@@ -515,12 +515,13 @@ class Bwa(object):
             outerr = open(outerr, 'w')
         try:
             with open(output_sam_path, 'w') as fH:
-                fH.write(subprocess.check_output(cmd.split(), stderr=outerr))
-            outerr.close()
+                bwa_output = subprocess.check_output(cmd.split(), stderr=outerr)
+                fH.write(bwa_output)
             return True
         except subprocess.CalledProcessError:
-            outerr.close()
             return False
+        finally:
+            outerr.close()
 
 
 class NanoporeRead(object):
@@ -1168,7 +1169,7 @@ class SignalAlignment(object):
 
         # object for handling temporary files
         temp_folder   = FolderHandler()
-        temp_dir_path = temp_folder.open_folder(self.destination + "tempFiles_{readLabel}".format(readLabel=read_label))
+        temp_dir_path = temp_folder.open_folder(os.path.join(self.destination, "tempFiles_{readLabel}".format(readLabel=read_label)))
 
         # read-specific files, could be removed later but are kept right now to make it easier to rerun commands
         temp_npRead  = temp_folder.add_file_path("temp_{read}.npRead".format(read=read_label))
@@ -1365,7 +1366,7 @@ class SignalAlignment(object):
 
         # run
         print("signalAlign - running command: ", command, end="\n", file=sys.stderr)
-        os.system(command)
+        subprocess.check_call(command.split())
         temp_folder.remove_folder()
         return True
 
