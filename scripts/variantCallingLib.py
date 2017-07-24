@@ -205,7 +205,8 @@ def run_service(service, service_iterable, service_arguments, workers, iterable_
     done_queue.put('STOP')
 
 
-def make_reference_files_and_alignment_args(working_folder, reference_sequence_string, alignment_args,
+#todo: deprecated (this should be removed)
+def make_reference_files_and_alignment_args(working_folder, reference_sequence_string, reference_map,
                                             n_positions=None):
     # make paths for working txt files that contain this STEPs Ns
     forward_reference = working_folder.add_file_path("forward_reference.txt")
@@ -218,12 +219,24 @@ def make_reference_files_and_alignment_args(working_folder, reference_sequence_s
     assert check, "Problem making degenerate reference"
 
     # perform alignment for this step
-    alignment_args["forward_reference"] = forward_reference
-    alignment_args["backward_reference"] = backward_reference
+    #instead of updating the alignment_args with these, we now update values in the map for this single contig
+    reference_map["forward"] = forward_reference #key was forward_reference
+    reference_map["backward"] = backward_reference #key was backward_reference
     return True
 
 
-def scan_for_proposals(working_folder, step, reference_sequence_string, list_of_fast5s, alignment_args, workers):
+def scan_for_proposals(working_folder, step, reference_map, reference_sequence_string, list_of_fast5s, alignment_args, workers):
+    # I'm hacking together the new (improved?) signal align API and the previous version of the api (from when the
+    # bonnyDoon script was last working).  The reference map groups by contigs (and is needed by the current SignalAlign
+    # API). this script uses the reference sequence string
+    # TODO either make this function properly handle the reference_map param, or change SignalAlign to handle single ref string
+    if len(reference_map) != 1:
+        print("[error] scan_for_proposals must have only one entry in reference map (got %d)" % len(reference_map))
+        sys.exit(1)
+    reference_map_contig_name = list(reference_map.keys())[0]
+    alignment_args['reference_map'] = reference_map
+    single_contig_reference_map = reference_map[reference_map_contig_name]
+
     reference_sequence_length = len(reference_sequence_string)
     assert reference_sequence_length > 0, "Got empty string for reference sequence."
 
@@ -232,8 +245,9 @@ def scan_for_proposals(working_folder, step, reference_sequence_string, list_of_
 
     for s in xrange(step):
         scan_positions = range(s, reference_sequence_length, step)
+        #tpesout: changed this function to update the values in single_contig_reference_map to fit new signalAlign API
         check = make_reference_files_and_alignment_args(working_folder, reference_sequence_string,
-                                                        alignment_args, n_positions=scan_positions)
+                                                        single_contig_reference_map, n_positions=scan_positions)
         assert check, "Problem making degenerate reference for step {step}".format(step=s)
 
         run_service(aligner, list_of_fast5s, alignment_args, workers, "in_fast5")

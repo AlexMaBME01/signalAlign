@@ -46,7 +46,7 @@ def write_fasta(id, sequence, destination):
 def cull_fast5_files(path_to_files, maximum_files):
     # list of alignment files
     fast5s = [x for x in os.listdir(path_to_files) if x.endswith(".fast5")]
-    fast5s = [path_to_files + x for x in fast5s]
+    fast5s = [os.path.join(path_to_files, x) for x in fast5s]
 
     if len(fast5s) == 0 or fast5s is None:
         print("[cull_fast5_files] : error culling .fast5 files")
@@ -63,7 +63,7 @@ def cull_fast5_files(path_to_files, maximum_files):
 def get_bwa_index(reference, dest, output=None):
     bwa = Bwa(reference)
     bwa.build_index(dest, output=output)
-    bwa_ref_index = dest + "temp_bwaIndex"
+    bwa_ref_index = os.path.join(dest, "temp_bwaIndex")
     return bwa_ref_index
 
 
@@ -482,7 +482,8 @@ class Bwa(object):
         self.db_handle = ''
 
     def build_index(self, destination, output=None):
-        self.db_handle = destination + '/temp_bwaIndex'
+        self.db_handle = os.path.join(destination, 'temp_bwaIndex')
+        if not os.path.isdir(self.db_handle): os.mkdir(self.db_handle)
         #os.system("bwa index -p {0} {1}".format(self.db_handle, self.target))
         cmd = "bwa index -p {0} {1}".format(self.db_handle, self.target)
         if output is None:
@@ -1114,7 +1115,7 @@ class SignalAlignment(object):
                  diagonal_expansion,
                  constraint_trim,
                  degenerate,
-                 twoD_chemistry,
+                 twoD_chemistry=False,
                  target_regions=None,
                  output_format="full"):
         self.in_fast5           = in_fast5            # fast5 file to align

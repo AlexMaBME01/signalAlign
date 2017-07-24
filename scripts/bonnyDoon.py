@@ -14,7 +14,7 @@ from random import shuffle
 from shutil import copyfile
 from operator import itemgetter
 
-STEP = 6
+STEP = 5
 
 
 def parse_args():
@@ -64,8 +64,25 @@ def parse_args():
     # todo help string
     parser.add_argument('--corrected', dest='corrected', required=False, default='corrected.fa')
 
+    # todo added by tpesout (from master, with new signalAlign API)
+    parser.add_argument("--bwt", action='store', dest="bwt", default=None, required=False,
+                        help="path to BWT files. example: ../ref.fasta")
+
+    # todo these are used by process_reference_fasta, but maybe aren't needed for this script
+    # parser.add_argument('--ambig_char', '-X', action='store', required=False, default="X", type=str, dest='ambig_char',
+    #                     help="Character to substitute at positions, default is 'X'.")
+    # parser.add_argument("--motif", action="store", dest="motif_key", default=None)
+
     args = parser.parse_args()
     return args
+
+def resolvePath(p):
+    if p is None:
+        return None
+    elif p.startswith("/"):
+        return p
+    else:
+        return os.path.abspath(p)
 
 
 def group_sites_in_window2(sites, window=6):
@@ -223,10 +240,22 @@ def main(args):
     command_line = " ".join(sys.argv[:])
     print("Command Line: {cmdLine}\n".format(cmdLine=command_line), file=sys.stderr)
 
+    # get absolute paths to inputs
+    args.files_dir           = resolvePath(args.files_dir)
+    args.ref                 = resolvePath(args.ref)
+    args.out                 = resolvePath(args.out)
+    args.bwt                 = resolvePath(args.bwt)
+    args.in_T_Hmm            = resolvePath(args.in_T_Hmm)
+    args.in_C_Hmm            = resolvePath(args.in_C_Hmm)
+    args.templateHDP         = resolvePath(args.templateHDP)
+    args.complementHDP       = resolvePath(args.complementHDP)
+    args.target_regions      = resolvePath(args.target_regions)
+
     start_message = """
 #   Starting BonnyDoon Error-Correction
 #   Aligning files from: {fileDir}
 #   Aligning to reference: {reference}
+#   Using BWT: {bwt}
 #   Aligning maximum of {nbFiles} files
 #   Using model: {model}
 #   Using banding: {banding}
@@ -235,7 +264,7 @@ def main(args):
 #   Non-default complement HMM: {inChmm}
 #   Template HDP: {tHdp}
 #   Complement HDP: {cHdp}
-    """.format(fileDir=args.files_dir, reference=args.ref, nbFiles=args.nb_files, banding=args.banded,
+    """.format(fileDir=args.files_dir, reference=args.ref, bwt=args.bwt, nbFiles=args.nb_files, banding=args.banded,
                inThmm=args.in_T_Hmm, inChmm=args.in_C_Hmm, model=args.stateMachineType, regions=args.target_regions,
                tHdp=args.templateHDP, cHdp=args.complementHDP)
 
@@ -247,17 +276,29 @@ def main(args):
     if not os.path.isfile(args.ref):
         print("Did not find valid reference file", file=sys.stderr)
         sys.exit(1)
-    reference_sequence_path = args.ref
-
-    # unpack the reference sequence
-    reference_sequence_string = get_first_sequence(reference_sequence_path)
 
     # make a working folder in the specified directory
     temp_folder = FolderHandler()
-    temp_dir_path = temp_folder.open_folder(args.out + "tempFiles_errorCorrection")
+    temp_dir_path = temp_folder.open_folder(os.path.join(args.out, "tempFiles_errorCorrection"))
 
-    # index the reference for bwa this is a string with the path to the index
-    bwa_ref_index = get_bwa_index(reference_sequence_path, temp_dir_path)
+    # TODO this is what's in master
+    # this is used by signal align, it's a map of reference contigs.  currently this script only supports one contig
+    reference_map = process_reference_fasta(fasta=args.ref, motif_key=None, work_folder=temp_folder, sub_char=None)
+
+    # TODO this was old reference mgmt
+    # this is used by scan_for_proposals (and modifies
+    reference_sequence_path = args.ref
+    # unpack the reference sequence
+    reference_sequence_string = get_first_sequence(reference_sequence_path)
+
+    # get bwa index
+    if args.bwt is not None:
+        print("signalAlign - using provided BWT %s" % args.bwt)
+        bwa_ref_index = args.bwt
+    else:
+        print("signalAlign - indexing reference at %s" % args.ref, file=sys.stderr)
+        bwa_ref_index = get_bwa_index(args.ref, temp_dir_path)
+        print("signalAlign - indexing reference, done", file=sys.stderr)
 
     # alignment args are the parameters to the HMM/HDP model, and don't change
     alignment_args = {
@@ -269,8 +310,9 @@ def main(args):
         "in_complementHmm": args.in_C_Hmm,
         "in_templateHdp": args.templateHDP,
         "in_complementHdp": args.complementHDP,
-        "banded": args.banded,
-        "sparse_output": True,
+        # todo these break signalAlignLib:SignalAlignment ctor
+        # "banded": args.banded,
+        # "sparse_output": True,
         "threshold": args.threshold,
         "diagonal_expansion": args.diag_expansion,
         "constraint_trim": args.constraint_trim,
@@ -279,7 +321,7 @@ def main(args):
     }
 
     # get the sites that have proposed edits
-    proposals = scan_for_proposals(temp_folder, STEP, reference_sequence_string, fast5s, alignment_args, args.nb_jobs)
+    proposals = scan_for_proposals(temp_folder, STEP, reference_map, reference_sequence_string, fast5s, alignment_args, args.nb_jobs)
     proposals = group_sites_in_window2([x[0] for x in proposals], 6)
 
 
