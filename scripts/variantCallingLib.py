@@ -171,7 +171,7 @@ def aligner(work_queue, done_queue):
             alignment.run()
     except Exception, e:
         name = current_process().name
-        message = e.message if (e.message is None or len(e.message) == 0) else  e
+        message = e if (e.message is None or len(e.message) == 0) else e.message
         error = "aligner '%s' failed with: %s" % (name, message)
         print(error)
         done_queue.put(error)
@@ -184,7 +184,7 @@ def variant_caller(work_queue, done_queue):
             c.write()
     except Exception, e:
         name = current_process().name
-        message = e.message if (e.message is None or len(e.message) == 0) else  e
+        message = e if (e.message is None or len(e.message) == 0) else e.message
         error = "variant_caller '%s' failed with: %s" % (name, message)
         print(error)
         done_queue.put(error)
