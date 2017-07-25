@@ -200,28 +200,32 @@ class CallMethylation(object):
 
     def write(self, out_file=None):
         self.call_methyls(positions=self.positions, threshold=self.threshold)
-        fH = open(out_file, 'a') if self.out_file is None else open(self.out_file, 'a')
-
-        file_name = self.alignment_file.split("/")[-1]
+        out = out_file if self.out_file is None else self.out_file
+        print("tpesout: opening %s to write Methylation, with %d probs"
+              .format(out, len(self.probs) if self.probs is not None else -1)) #todo this can be deleted
 
         def output_line():
             return "{site}\t{strand}\t{c}\t{mc}\t{hmc}\t{read}\n" if self.degenerate in [1, 2] \
                 else "{site}\t{strand}\t{A}\t{C}\t{G}\t{T}\t{read}\n"
 
-        line = output_line()
+        with open(out, 'a') as fH:
+            file_name = self.alignment_file.split("/")[-1]
+            line = output_line()
 
-        for strand, site, prob in self.probs:
-            if self.degenerate in [1, 2]:
-                fH.write(line.format(site=site, strand=strand,
-                                     c=prob["C"], mc=prob["E"], hmc=prob["O"],
-                                     read=file_name))
-            elif self.degenerate == 3:
-                fH.write(line.format(site=site, strand=strand,
-                                     A=prob["A"], C=prob["C"], G=prob["G"], T=prob["T"],
-                                     read=file_name))
-            else:
-                sys.exit(1)
-        return
+            for strand, site, prob in self.probs:
+                if self.degenerate in [1, 2]:
+                    fH.write(line.format(site=site, strand=strand,
+                                         c=prob["C"], mc=prob["E"], hmc=prob["O"],
+                                         read=file_name))
+                elif self.degenerate == 3:
+                    fH.write(line.format(site=site, strand=strand,
+                                         A=prob["A"], C=prob["C"], G=prob["G"], T=prob["T"],
+                                         read=file_name))
+                else:
+                    error = "Error writing methylation call: {site:%s, strand:%s, read:%s, prob:%s, degenerate:%s}"\
+                        .format(site, strand, file_name, prob, self.degenerate)
+                    print(error)
+                    sys.exit(1)
 
     def run(self):
         self.write()
