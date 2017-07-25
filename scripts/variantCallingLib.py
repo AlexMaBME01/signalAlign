@@ -170,9 +170,11 @@ def aligner(work_queue, done_queue):
             alignment = SignalAlignment(**f)
             alignment.run()
     except Exception, e:
-        msg = "aligner %s failed with %s" % (current_process().name, e.message)
-        print(msg)
-        done_queue.put(msg)
+        name = current_process().name
+        message = e.message if (e.message is None or len(e.message) == 0) else  e
+        error = "aligner '%s' failed with: %s" % (name, message)
+        print(error)
+        done_queue.put(error)
 
 
 def variant_caller(work_queue, done_queue):
@@ -181,9 +183,11 @@ def variant_caller(work_queue, done_queue):
             c = CallMethylation(**f)
             c.write()
     except Exception, e:
-        msg = "variant_caller %s failed with %s" % (current_process().name, e.message)
-        print(msg)
-        done_queue.put(msg)
+        name = current_process().name
+        message = e.message if (e.message is None or len(e.message) == 0) else  e
+        error = "variant_caller '%s' failed with: %s" % (name, message)
+        print(error)
+        done_queue.put(error)
 
 
 def run_service(service, service_iterable, service_arguments, workers, iterable_argument):
