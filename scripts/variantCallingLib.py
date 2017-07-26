@@ -174,8 +174,10 @@ def aligner(work_queue, done_queue):
         print("[aligner] '%s' completed %d alignments" % (current_process().name, i))
     except Exception, e:
         name = current_process().name
-        message = e if (e.message is None or len(e.message) == 0) else e.message
-        error = "aligner '%s' failed with: %s" % (name, message)
+        message = e.message
+        if message is None or len(message) == 0:
+            message = "exception:" + str(e)
+        error = "aligner '{}' failed with: {}".format(name, message)
         print("[aligner] " + error)
         done_queue.put(error)
 
@@ -187,12 +189,14 @@ def variant_caller(work_queue, done_queue):
             c = CallMethylation(**f)
             c.write()
             i += 1
-        print("[varaint_caller] '%s' completed %d variant calls" % (current_process().name, i))
+        print("[variant_caller] '%s' completed %d variant calls" % (current_process().name, i))
     except Exception, e:
         name = current_process().name
-        message = e if (e.message is None or len(e.message) == 0) else e.message
-        error = "variant_caller '%s' failed with: %s" % (name, message)
-        print("[varaint_caller] " + error)
+        message = e.message
+        if message is None or len(message) == 0:
+            message = "exception:" + str(e)
+        error = "variant_caller '{}' failed with: {}".format(name, message)
+        print("[variant_caller] " + error)
         done_queue.put(error)
 
 

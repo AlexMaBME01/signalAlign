@@ -171,34 +171,53 @@ class CallMethylation(object):
               % (len(template_sites), len(complement_sites)))
 
         def get_calls(sites, strand, regular_offset):
-            for site in sites:
-                # get the positions that an event can be aligned to and still report on this site
-                positions = self.get_range(site)
+            print(self.identifier() + "calling {} sites on {} strand with regular_offset {}".format(len(sites), strand, regular_offset))
+            next_report = 1
+            itr = 1
+            success = False
+            try:
+                for site in sites:
+                    # prep for reporting
+                    report = next_report == itr
+                    if report: next_report *= 16
 
-                # select the rows in the dataFrame that have events aligned to this position
-                crit = self.data['ref_index'].map(lambda x: x in positions)
-                select = self.data[crit].ix[(self.data['strand'] == strand) & (self.data['prob'] >= threshold)]
-                select = select.drop(select[['strand', 'ref_kmer']], axis=1)
+                    # get the positions that an event can be aligned to and still report on this site
+                    if report: print(self.identifier() + "{}: site {}".format(itr, site))
+                    positions = self.get_range(site)
 
-                if select.empty:
-                    continue
+                    # select the rows in the dataFrame that have events aligned to this position
+                    crit = self.data['ref_index'].map(lambda x: x in positions)
+                    select = self.data[crit].ix[(self.data['strand'] == strand) & (self.data['prob'] >= threshold)]
+                    select = select.drop(select[['strand', 'ref_kmer']], axis=1)
+                    if report: print(self.identifier() + "{}: select {}".format(itr, select))
 
-                marginal_probs = {"C": 0, "E": 0, "O": 0} if self.degenerate in [1, 2] \
-                    else {"A": 0, "C": 0, "G": 0, "T": 0}
+                    if select.empty:
+                        continue
 
-                for r in select.itertuples():
-                    #kmer_length = len(r[5])
-                    #offset = site - r[1] if regular_offset is True else 5 - (site - r[1])
-                    offset = site - r[1] if regular_offset is True else (self.kmer_length - 1) - (site - r[1])
-                    call = r[5][offset]
-                    marginal_probs[call] += r[4]
+                    marginal_probs = {"C": 0, "E": 0, "O": 0} if self.degenerate in [1, 2] \
+                        else {"A": 0, "C": 0, "G": 0, "T": 0}
 
-                total_prob = sum(marginal_probs.values())
+                    for r in select.itertuples():
+                        #kmer_length = len(r[5])
+                        #offset = site - r[1] if regular_offset is True else 5 - (site - r[1])
+                        offset = site - r[1] if regular_offset is True else (self.kmer_length - 1) - (site - r[1])
+                        call = r[5][offset]
+                        marginal_probs[call] += r[4]
+                    if report: print(self.identifier() + "{}: marginal_probs {}".format(itr, marginal_probs))
 
-                for call in marginal_probs:
-                    marginal_probs[call] /= total_prob
+                    total_prob = sum(marginal_probs.values())
 
-                self.probs.append((strand, site, marginal_probs))
+                    for call in marginal_probs:
+                        marginal_probs[call] /= total_prob
+
+                    self.probs.append((strand, site, marginal_probs))
+                    if report: print(self.identifier() + "{}: saved {}th probability".format(itr, len(self.probs())))
+                    itr += 1
+                success = True
+            finally:
+                print(self.identifier() + "completed {}/{} sites with {}".format(itr, len(sites), "success" if success else "failure"))
+
+
 
         template_offset = True if self.forward is True else False
         complement_offset = False if self.forward is True else True
