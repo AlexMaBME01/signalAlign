@@ -14,6 +14,7 @@ from motif import getMotif
 from serviceCourse.sequenceTools import reverse_complement
 from serviceCourse.parsers import read_fasta
 from serviceCourse.file_handlers import FolderHandler
+from multiprocessing import current_process
 
 # Globals
 NORM_DIST_PARAMS = 2
@@ -1153,14 +1154,17 @@ class SignalAlignment(object):
         else:
             self.in_complementHdp = None
 
+    def identifier(self):
+        return "[SignalAlignment.%s] " % current_process().name
+
     def run(self, get_expectations=False):
-        print("[SignalAlign::run]Starting on {read}".format(read=self.in_fast5), file=sys.stderr)
+        print(self.identifier() + "Starting on {read}".format(read=self.in_fast5), file=sys.stderr)
         if get_expectations:
             assert self.in_templateHmm is not None and self.in_complementHmm is not None,\
-                "Need HMM files for model training"
+                self.identifier() + "Need HMM files for model training"
         # file checks
         if os.path.isfile(self.in_fast5) is False:
-            print("signalAlign - did not find .fast5 at{file}".format(file=self.in_fast5))
+            print(self.identifier() + "did not find .fast5 at {file}".format(file=self.in_fast5))
             return False
 
         # containers and defaults
@@ -1186,9 +1190,12 @@ class SignalAlignment(object):
                                                                        twod_read_path=read_fasta)
 
         if not ok:
-            print("file {file} does not have is corrupt".format(file=read_label), file=sys.stderr)
+            print(self.identifier() + "[error] file {file} does not have is corrupt".format(file=read_label), file=sys.stderr)
             temp_folder.remove_folder()
             return False
+
+        print(self.identifier() + "fasta for read {} with version {} generated".format(read_label, version),
+              file=sys.stderr)
 
         # add an indicator for the model being used
         if self.stateMachineType == "threeState":
@@ -1215,10 +1222,10 @@ class SignalAlignment(object):
         cig_handle.close()
         if mapped_refernce not in self.reference_map.keys():
             if mapped_refernce is False:
-                print("[SignalAlignment::run]Read {read} didn't map"
+                print(self.identifier() + "Read {read} didn't map"
                       "".format(read=read_label), file=sys.stderr)
             else:
-                print("[SignalAlignment::run]Reference {ref} not found in contigs"
+                print(self.identifier() + "Reference {ref} not found in contigs"
                       "{keys}".format(ref=mapped_refernce, keys=self.reference_map.keys()),
                       file=sys.stderr)
             temp_folder.remove_folder()
@@ -1247,12 +1254,13 @@ class SignalAlignment(object):
 
         # didn't map
         elif (strand != "+") and (strand != "-"):
-            print("[SignalAlignment::run]- {read} gave unrecognizable strand flag: {flag}".format(read=read_label, flag=strand),
+            print(self.identifier() + "- {read} gave unrecognizable strand flag: {flag}".format(read=read_label, flag=strand),
                   file=sys.stderr)
             temp_folder.remove_folder()
             return False
 
         # Alignment/Expectations routine
+        print(self.identifier() + "prepping for alignment",file=sys.stderr)
 
         # containers and defaults
         path_to_signalAlign = "./signalMachine"
@@ -1277,7 +1285,7 @@ class SignalAlignment(object):
         else:
             complement_model_flag = ""
 
-        print("signalAlign - NOTICE: template model {t} complement model {c}"
+        print(self.identifier() + "NOTICE: template model {t} complement model {c}"
               "".format(t=self.in_templateHmm, c=self.in_complementHmm), file=sys.stderr)
 
         # reference sequences
@@ -1365,9 +1373,10 @@ class SignalAlignment(object):
                         trim=trim_flag, hdp=hdp_flags, degen=degenerate_flag)
 
         # run
-        print("signalAlign - running command: ", command, end="\n", file=sys.stderr)
+        print(self.identifier() + "running command: ", command, end="\n", file=sys.stderr)
         subprocess.check_call(command.split())
         temp_folder.remove_folder()
+        print(self.identifier() + "command completed successfully", end="\n", file=sys.stderr)
         return True
 
 

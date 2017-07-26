@@ -166,27 +166,33 @@ def call_sites_with_marginal_probs(data, reference_sequence_string, min_depth=0,
 
 def aligner(work_queue, done_queue):
     try:
+        i = 0
         for f in iter(work_queue.get, 'STOP'):
             alignment = SignalAlignment(**f)
             alignment.run()
+            i += 1
+        print("[aligner] '%s' completed %d alignments" % (current_process().name, i))
     except Exception, e:
         name = current_process().name
         message = e if (e.message is None or len(e.message) == 0) else e.message
         error = "aligner '%s' failed with: %s" % (name, message)
-        print(error)
+        print("[aligner] " + error)
         done_queue.put(error)
 
 
 def variant_caller(work_queue, done_queue):
     try:
+        i = 0
         for f in iter(work_queue.get, 'STOP'):
             c = CallMethylation(**f)
             c.write()
+            i += 1
+        print("[varaint_caller] '%s' completed %d variant calls" % (current_process().name, i))
     except Exception, e:
         name = current_process().name
         message = e if (e.message is None or len(e.message) == 0) else e.message
         error = "variant_caller '%s' failed with: %s" % (name, message)
-        print(error)
+        print("[varaint_caller] " + error)
         done_queue.put(error)
 
 
@@ -252,20 +258,25 @@ def scan_for_proposals(working_folder, step, reference_map, reference_sequence_s
     proposals = []
 
     for s in xrange(step):
+        print("\n[info] starting step %d" % s)
         scan_positions = range(s, reference_sequence_length, step)
         #tpesout: changed this function to update the values in single_contig_reference_map to fit new signalAlign API
         check = make_reference_files_and_alignment_args(working_folder, reference_sequence_string,
                                                         single_contig_reference_map, n_positions=scan_positions)
         assert check, "Problem making degenerate reference for step {step}".format(step=s)
 
+        print("[info] running aligner on %d fast5 files with %d workers" % (len(list_of_fast5s), workers))
         run_service(aligner, list_of_fast5s, alignment_args, workers, "in_fast5")
 
         # alignments is the list of alignments to gather proposals from
         alignments = [x for x in glob.glob(working_folder.path + "*.tsv") if os.stat(x).st_size != 0]
+        alignment_count = len(alignments)
 
-        if len(alignments) == 0:
+        if alignment_count == 0:
             print("[error] Didn't find any alignment files here {}".format(working_folder.path))
             sys.exit(1)
+        else:
+            print("[info] Found %d alignment files here %s" % (alignment_count, working_folder.path))
 
         marginal_probability_file = working_folder.add_file_path("marginals.{step}.calls".format(step=s))
 
@@ -276,21 +287,22 @@ def scan_for_proposals(working_folder, step, reference_map, reference_sequence_s
             "degenerate_type": alignment_args["degenerate"],
             "kmer_length": step #todo this is a new param tpesout added, is this the right call?
         }
-        #for alignment in alignments:
-        #    a = dict({"alignment_file": alignment}, **proposal_args)
-        #    c = CallMethylation(**a)
-        #    c.write()
+
+        print("[info] running variant_caller on %d alignments files with %d workers" % (alignment_count, workers))
         run_service(variant_caller, alignments, proposal_args, workers, "alignment_file")
 
         # get proposal sites
+        print("[info] calling sites with marginal probabilities from %s" % marginal_probability_file)
         proposals += call_sites_with_marginal_probs(marginal_probability_file, reference_sequence_string,
                                                     min_depth=0, get_sites=True)
         # remove old alignments
         for f in glob.glob(working_folder.path + "*.tsv"):
             os.remove(f)
+        print("[info] step %d completed\n" % s)
     # proposals is a list of lists containing (position, delta_prob) where position in the position in the
     # reference sequence that is being proposed to be edited, and delta_prob is the difference in probability
     # of the reference base to the proposed base
+    print("[info] returning %d proposals" % len(proposals))
     return proposals
 
 

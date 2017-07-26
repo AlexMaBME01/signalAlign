@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 from random import shuffle
 from serviceCourse.parsers import read_fasta
+from multiprocessing import current_process
 
 
 def get_first_sequence(input_fasta):
@@ -133,6 +134,9 @@ class CallMethylation(object):
         if label is not None:
             self.label = label
 
+    def identifier(self):
+        return "[CallMethylation.%s] " % current_process().name
+
     def parse_alignment(self):
         # todo make this try, except
         self.data = pd.read_table(self.alignment_file,
@@ -147,7 +151,8 @@ class CallMethylation(object):
                                          'match_kmer': np.str,
                                          'prob': np.float64,
                                          'path_kmer': np.str})
-        assert self.data is not None, "problem parsing alignment file {}".format(self.alignment_file)
+        assert self.data is not None, self.identifier() + "problem parsing alignment file {}".format(self.alignment_file)
+        print(self.identifier() + "parsed alignment file %s" % self.alignment_file)
 
     def find_occurences(self, ch):
         return [i for i, letter in enumerate(self.sequence) if letter == ch]
@@ -162,6 +167,8 @@ class CallMethylation(object):
         else:
             template_sites = positions['forward'] if self.forward is True else positions['backward']
             complement_sites = positions['backward'] if self.forward is True else positions['forward']
+        print(self.identifier() + "calling methyls for %d template sites and %d complement sites"
+              % (len(template_sites), len(complement_sites)))
 
         def get_calls(sites, strand, regular_offset):
             for site in sites:
@@ -195,14 +202,16 @@ class CallMethylation(object):
 
         template_offset = True if self.forward is True else False
         complement_offset = False if self.forward is True else True
+
         get_calls(template_sites, 't', template_offset)
         get_calls(complement_sites, 'c', complement_offset)
+        print(self.identifier() + "got %d total probabilities" % len(self.probs))
 
     def write(self, out_file=None):
         self.call_methyls(positions=self.positions, threshold=self.threshold)
         out = out_file if self.out_file is None else self.out_file
-        print("tpesout: opening %s to write Methylation, with %d probs"
-              .format(out, len(self.probs) if self.probs is not None else -1)) #todo this can be deleted
+        print(self.identifier() + "opening %s to write methylation information"
+              .format(out))
 
         def output_line():
             return "{site}\t{strand}\t{c}\t{mc}\t{hmc}\t{read}\n" if self.degenerate in [1, 2] \
@@ -226,6 +235,7 @@ class CallMethylation(object):
                         .format(site, strand, file_name, prob, self.degenerate)
                     print(error)
                     sys.exit(1)
+        print(self.identifier() + "write completed")
 
     def run(self):
         self.write()

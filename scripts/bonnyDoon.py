@@ -238,7 +238,7 @@ def main(args):
     args = parse_args()
 
     command_line = " ".join(sys.argv[:])
-    print("Command Line: {cmdLine}\n".format(cmdLine=command_line), file=sys.stderr)
+    print("bonnyDoon - Command Line: {cmdLine}\n".format(cmdLine=command_line), file=sys.stderr)
 
     # get absolute paths to inputs
     args.files_dir           = resolvePath(args.files_dir)
@@ -274,7 +274,7 @@ def main(args):
 
     # get the (input) reference sequence
     if not os.path.isfile(args.ref):
-        print("Did not find valid reference file", file=sys.stderr)
+        print("bonnyDoon - Did not find valid reference file", file=sys.stderr)
         sys.exit(1)
 
     # make a working folder in the specified directory
@@ -293,12 +293,12 @@ def main(args):
 
     # get bwa index
     if args.bwt is not None:
-        print("signalAlign - using provided BWT %s" % args.bwt)
+        print("bonnyDoon - using provided BWT %s" % args.bwt)
         bwa_ref_index = args.bwt
     else:
-        print("signalAlign - indexing reference at %s" % args.ref, file=sys.stderr)
+        print("bonnyDoon - indexing reference at %s" % args.ref, file=sys.stderr)
         bwa_ref_index = get_bwa_index(args.ref, temp_dir_path)
-        print("signalAlign - indexing reference, done", file=sys.stderr)
+        print("bonnyDoon - indexing reference, done", file=sys.stderr)
 
     # alignment args are the parameters to the HMM/HDP model, and don't change
     alignment_args = {
@@ -321,13 +321,11 @@ def main(args):
     }
 
     # get the sites that have proposed edits
+    print("\n\nbonnyDoon - scanning for proposals with %d fast5s and step %d" % (len(fast5s), STEP))
     proposals = scan_for_proposals(temp_folder, STEP, reference_map, reference_sequence_string, fast5s, alignment_args, args.nb_jobs)
-    proposals = group_sites_in_window2([x[0] for x in proposals], 6)
-
-
-
-
-
+    print("\n\nbonnyDoon - grouping sites for %d proposals" % len(proposals))
+    proposals = group_sites_in_window2([x[0] for x in proposals], STEP)
+    print("\n\nbonnyDoon - fin\n")
 
     return
 
