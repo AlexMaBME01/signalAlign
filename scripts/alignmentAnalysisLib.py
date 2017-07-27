@@ -7,6 +7,7 @@ import numpy as np
 from random import shuffle
 from serviceCourse.parsers import read_fasta
 from multiprocessing import current_process
+import time
 
 
 def get_first_sequence(input_fasta):
@@ -171,25 +172,31 @@ class CallMethylation(object):
               % (len(template_sites), len(complement_sites)))
 
         def get_calls(sites, strand, regular_offset):
-            print(self.identifier() + "calling {} sites on {} strand with regular_offset {}".format(len(sites), strand, regular_offset))
-            next_report = 1
-            itr = 1
+            total_sites = len(sites)
+            print(self.identifier() + "calling {} sites on {} strand with regular_offset {}".format(total_sites, strand, regular_offset))
+            next_report = 16
+            i = 1
             success = False
+            start = time.clock()
             try:
                 for site in sites:
-                    # prep for reporting
-                    report = next_report == itr
+                    # reporting
+                    report = next_report == i
                     if report: next_report *= 16
+                    if report:
+                        time_passed = time.clock() - start
+                        time_left = time_passed / total_sites * (total_sites - i)
+                        print(self.identifier() + "site_idx:%d/%d\ttime_passed:%ds\ttime_left:%ds"
+                              % (i, total_sites, time_passed, time_left))
 
                     # get the positions that an event can be aligned to and still report on this site
-                    if report: print(self.identifier() + "{}: site {}".format(itr, site))
                     positions = self.get_range(site)
 
                     # select the rows in the dataFrame that have events aligned to this position
                     crit = self.data['ref_index'].map(lambda x: x in positions)
                     select = self.data[crit].ix[(self.data['strand'] == strand) & (self.data['prob'] >= threshold)]
                     select = select.drop(select[['strand', 'ref_kmer']], axis=1)
-                    if report: print(self.identifier() + "{}: select {}".format(itr, select))
+                    # if report: print(self.identifier() + "{}: select {}".format(i, select))
 
                     if select.empty:
                         continue
@@ -203,7 +210,7 @@ class CallMethylation(object):
                         offset = site - r[1] if regular_offset is True else (self.kmer_length - 1) - (site - r[1])
                         call = r[5][offset]
                         marginal_probs[call] += r[4]
-                    if report: print(self.identifier() + "{}: marginal_probs {}".format(itr, marginal_probs))
+                    # if report: print(self.identifier() + "{}: marginal_probs {}".format(i, marginal_probs))
 
                     total_prob = sum(marginal_probs.values())
 
@@ -211,11 +218,12 @@ class CallMethylation(object):
                         marginal_probs[call] /= total_prob
 
                     self.probs.append((strand, site, marginal_probs))
-                    if report: print(self.identifier() + "{}: saved {}th probability".format(itr, len(self.probs())))
-                    itr += 1
+                    # if report: print(self.identifier() + "{}: saved {}th probability".format(i, len(self.probs())))
+                    i += 1
                 success = True
             finally:
-                print(self.identifier() + "completed {}/{} sites with {}".format(itr, len(sites), "success" if success else "failure"))
+                print(self.identifier() + "completed {}/{} sites in {}s with {}".format(
+                    i, total_sites, int(time.clock() - start), "success" if success else "failure"))
 
 
 
