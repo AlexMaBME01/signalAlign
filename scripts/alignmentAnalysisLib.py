@@ -8,6 +8,7 @@ from random import shuffle
 from serviceCourse.parsers import read_fasta
 from multiprocessing import current_process
 import time
+import datetime
 
 
 def get_first_sequence(input_fasta):
@@ -136,12 +137,12 @@ class CallMethylation(object):
             self.label = label
 
     def identifier(self):
-        return "[CallMethylation.%s] " % current_process().name
+        return "[CallMethylation.{}.{}] ".format(current_process().name, datetime.datetime.now())
 
     def parse_alignment(self):
         # todo make this try, except
         self.data = pd.read_table(self.alignment_file,
-                                  usecols=(1, 2, 4, 5, 6, 7, 8),
+                                  usecols=(1, 2, 4, 5, 9, 12, 15),
                                   header=None,
                                   names=['ref_index', 'ref_kmer', 'strand', 'event_index',
                                          'match_kmer', 'prob', 'path_kmer'],
