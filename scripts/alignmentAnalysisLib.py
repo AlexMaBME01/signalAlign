@@ -118,7 +118,7 @@ class KmerHistogram(object):
 
 class CallMethylation(object):
     def __init__(self, sequence, alignment_file, degenerate_type, kmer_length, label=None, positions=None,
-                 threshold=0.0, out_file=None):
+                 threshold=0.0, out_file=None, step_offset=None):
         self.sequence = sequence
         self.forward = ".forward." in alignment_file
         self.alignment_file = alignment_file
@@ -132,6 +132,7 @@ class CallMethylation(object):
         self.degenerate = degenerate_type
         self.threshold = threshold
         self.kmer_length = kmer_length
+        self.step_offset = step_offset
 
         if label is not None:
             self.label = label
@@ -163,19 +164,32 @@ class CallMethylation(object):
         return range(position - (self.kmer_length - 1), position + 1)
 
     def call_methyls(self, positions=None, threshold=0.0):
-        if positions is None:
-            template_sites = self.find_occurences("C") if self.forward is True else self.find_occurences("G")
-            complement_sites = self.find_occurences("G") if self.forward is True else self.find_occurences("C")
-        else:
-            template_sites = positions['forward'] if self.forward is True else positions['backward']
-            complement_sites = positions['backward'] if self.forward is True else positions['forward']
+        # todo I think "None positions" isn't a use case for us going forward, but I don't want to break the API
+        # if positions is None:
+        #     print(self.identifier() + "finding sites based on GC occurance")
+        #     template_sites = self.find_occurences("C") if self.forward is True else self.find_occurences("G")
+        #     complement_sites = self.find_occurences("G") if self.forward is True else self.find_occurences("C")
+        if self.step_offset is not None:
+            # the reference could have millions of positions to check, so we recaluclate the positions based
+            # on what's in the alignment file and the offset into the step/kmer_length
+            print(self.identifier() + "finding sites based on alignment index and step offset")
+            min_ref_pos = min(self.data['ref_index']) - self.kmer_length
+            max_ref_pos = max(self.data['ref_index']) + self.kmer_length
+            while min_ref_pos % self.kmer_length != 0: min_ref_pos -= 1
+            while max_ref_pos % self.kmer_length != 0: min_ref_pos += 1
+            template_sites = range(min_ref_pos + self.step_offset, max_ref_pos, self.kmer_length)
+            complement_sites = range(min_ref_pos + self.step_offset, max_ref_pos, self.kmer_length)
+        # else:
+        #     print(self.identifier() + "finding sites based on specified positions")
+        #     template_sites = positions['forward'] if self.forward is True else positions['backward']
+        #     complement_sites = positions['backward'] if self.forward is True else positions['forward']
         print(self.identifier() + "calling methyls for %d template sites and %d complement sites"
               % (len(template_sites), len(complement_sites)))
 
         def get_calls(sites, strand, regular_offset):
             total_sites = len(sites)
             print(self.identifier() + "calling {} sites on {} strand with regular_offset {}".format(total_sites, strand, regular_offset))
-            next_report = 16
+            next_report = 8
             i = 1
             success = False
             start = time.clock()
@@ -183,10 +197,10 @@ class CallMethylation(object):
                 for site in sites:
                     # reporting
                     report = next_report == i
-                    if report: next_report *= 16
+                    if report: next_report *= 8
                     if report:
                         time_passed = time.clock() - start
-                        time_left = time_passed / total_sites * (total_sites - i)
+                        time_left = time_passed / i * (total_sites - i)
                         print(self.identifier() + "site_idx:%d/%d\ttime_passed:%ds\ttime_left:%ds"
                               % (i, total_sites, time_passed, time_left))
 
@@ -225,8 +239,6 @@ class CallMethylation(object):
             finally:
                 print(self.identifier() + "completed {}/{} sites in {}s with {}".format(
                     i, total_sites, int(time.clock() - start), "success" if success else "failure"))
-
-
 
         template_offset = True if self.forward is True else False
         complement_offset = False if self.forward is True else True

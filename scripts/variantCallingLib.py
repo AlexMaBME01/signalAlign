@@ -119,6 +119,7 @@ def call_sites_with_marginal_probs(data, reference_sequence_string, min_depth=0,
     candidate_sites = []
     add_to_candidates = candidate_sites.append
 
+    print("#POS\tA\tC\tG\tT\tDIFF")
     for g, x in d.groupby("site"):
         marginal_forward_p = pd.Series(0, ['pA', 'pC', 'pG', 'pT'])
         marginal_backward_p = pd.Series(0, ['pA', 'pC', 'pG', 'pT'])
@@ -144,19 +145,23 @@ def call_sites_with_marginal_probs(data, reference_sequence_string, min_depth=0,
 
         normed_marginal_probs = marginal_prob.map(lambda y: y / sum(marginal_prob))
         called_base = normed_marginal_probs.argmax()[1]
+        difference = normed_marginal_probs.max() - normed_marginal_probs["p" + reference_sequence_list[site]]
+        add_to_candidates((site, difference))
 
-        if called_base != reference_sequence_list[site]:
-            if get_sites is False:
-                print("Changing {orig} to {new} at {site} depth {depth}"
-                      "".format(orig=reference_sequence_list[site], new=called_base, site=site, depth=len(x['read'])))
-                reference_sequence_list[site] = called_base
-            else:
-                print("Proposing edit at {site} from {orig} to {new}, \n{probs}"
-                      "".format(orig=reference_sequence_list[site], new=called_base, site=site,
-                                probs=normed_marginal_probs))
-                difference = normed_marginal_probs.max() - normed_marginal_probs["p" + reference_sequence_list[site]]
-                print(difference)
-                add_to_candidates((site, difference))
+        print("{}\t{}\t{}\t{}\t{}\t{}".format(site, normed_marginal_probs['pA'], normed_marginal_probs['pC'],
+                                          normed_marginal_probs['pG'], normed_marginal_probs['pT'], difference))
+        # if called_base != reference_sequence_list[site]:
+        #     if get_sites is False:
+        #         print("Changing {orig} to {new} at {site} depth {depth}"
+        #               "".format(orig=reference_sequence_list[site], new=called_base, site=site, depth=len(x['read'])))
+        #         reference_sequence_list[site] = called_base
+        #     else:
+        #         print("Proposing edit at {site} from {orig} to {new}, \n{probs}"
+        #               "".format(orig=reference_sequence_list[site], new=called_base, site=site,
+        #                         probs=normed_marginal_probs))
+        #         difference = normed_marginal_probs.max() - normed_marginal_probs["p" + reference_sequence_list[site]]
+        #         print(difference)
+        #         add_to_candidates((site, difference))
 
     if get_sites is True:
         return candidate_sites
@@ -287,7 +292,9 @@ def scan_for_proposals(working_folder, step, reference_map, reference_sequence_s
         proposal_args = {
             "sequence": None,
             "out_file": marginal_probability_file,
-            "positions": {"forward": scan_positions, "backward": scan_positions},
+            # removed to force use of offset and kmer length
+            # "positions": {"forward": scan_positions, "backward": scan_positions},
+            "step_offset": s,
             "degenerate_type": alignment_args["degenerate"],
             "kmer_length": step #todo this is a new param tpesout added, is this the right call?
         }
