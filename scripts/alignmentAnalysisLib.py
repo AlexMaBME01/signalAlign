@@ -117,6 +117,7 @@ class KmerHistogram(object):
 
 
 class CallMethylation(object):
+    FILE_EXTENSION = "calls"
     def __init__(self, sequence, alignment_file, degenerate_type, kmer_length, step_offset=None, label=None,
                  positions=None, threshold=0.0, out_file_prefix=None):
         self.sequence = sequence
@@ -253,9 +254,9 @@ class CallMethylation(object):
             out = out_file
         else:
             if self.out_file_prefix is not None:
-                out = "{}.{}.calls".format(self.out_file_prefix, self.alignment_file_name)
+                out = "{}.{}.{}".format(self.out_file_prefix, self.alignment_file_name, CallMethylation.FILE_EXTENSION)
             else:
-                out = "{}.calls".format(self.alignment_file_name)
+                out = "{}.{}".format(self.alignment_file_name, CallMethylation.FILE_EXTENSION)
         print(self.identifier() + "opening {} to write methylation information"
               .format(out))
 

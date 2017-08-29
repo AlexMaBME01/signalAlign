@@ -8,7 +8,7 @@ import glob
 import pandas as pd
 import numpy as np
 from random import shuffle
-from signalAlignLib import SignalAlignment
+from signalAlignLib import SignalAlignment, NanoporeRead
 from alignmentAnalysisLib import CallMethylation
 from multiprocessing import Process, Queue, current_process, Manager
 from serviceCourse.parsers import read_fasta
@@ -266,7 +266,7 @@ def make_reference_files_and_alignment_args(working_folder, reference_sequence_s
 
 
 def scan_for_proposals(working_folder, step, reference_map, reference_sequence_string, list_of_fast5s, alignment_args,
-                       workers, use_saved_alignments=True, save_alignments=True):
+                       workers, use_saved_alignments=False, save_alignments=True):
     # I'm hacking together the new (improved?) signal align API and the previous version of the api (from when the
     # bonnyDoon script was last working).  The reference map groups by contigs (and is needed by the current SignalAlign
     # API). this script uses the reference sequence string
@@ -282,7 +282,13 @@ def scan_for_proposals(working_folder, step, reference_map, reference_sequence_s
     assert reference_sequence_length > 0, "Got empty string for reference sequence."
 
     # proposals will contain the sites that we're going to change to N
+    #todo remove this
     proposals = []
+
+    fast5_to_read = build_fast5_to_read_id_dict(list_of_fast5s)
+    print("[info] built map of fast5 identifiers to read ids with {} elements".format(len(fast5_to_read)))
+
+    #todo we want to "join" all the steps per fast5
 
     for s in xrange(step):
         print("\n[info] starting step %d" % s)
@@ -307,7 +313,8 @@ def scan_for_proposals(working_folder, step, reference_map, reference_sequence_s
             print("[error] Didn't find any alignment files here {}".format(working_folder.path))
             sys.exit(1)
         else:
-            print("[info] Found %d alignment files here %s" % (alignment_count, working_folder.path))
+            print("[info] Found %d alignment files ({} input fast5s) here %s" %
+                  (alignment_count, len(list_of_fast5s), working_folder.path))
 
         marginal_probability_prefix = working_folder.add_file_path("marginals.{step}".format(step=s))
 
@@ -324,17 +331,7 @@ def scan_for_proposals(working_folder, step, reference_map, reference_sequence_s
         print("[info] running variant_caller on %d alignments files with %d workers" % (alignment_count, workers))
         run_service(variant_caller, alignments, proposal_args, workers, "alignment_file")
 
-        # get proposal sites
-        prob_glob = os.path.join(working_folder.path, "{}*".format(marginal_probability_prefix))
-        marginal_prob_files = [x for x in
-                               glob.glob(prob_glob)
-                               if os.stat(x).st_size != 0]
-        print("[info] found {} marginal probability files matching {}".format(len(marginal_prob_files), prob_glob))
-        for marginal_prob_file in marginal_prob_files:
-            print("[info] calling sites with marginal probabilities from %s" % marginal_probability_prefix)
-            proposals += call_sites_with_marginal_probs(marginal_prob_file, reference_sequence_string,
-                                                        min_depth=0, get_sites=True)
-        # remove or old alignments
+        # remove or save old alignments
         files = glob.glob(working_folder.path + "*.tsv")
         if save_alignments:
             if not os.path.isdir(saved_step_dir): os.mkdir(saved_step_dir)
@@ -347,11 +344,60 @@ def scan_for_proposals(working_folder, step, reference_map, reference_sequence_s
                 os.remove(f)
         print("[info] step %d completed\n" % s)
 
-    # proposals is a list of lists containing (position, delta_prob) where position in the position in the
-    # reference sequence that is being proposed to be edited, and delta_prob is the difference in probability
-    # of the reference base to the proposed base
-    print("[info] returning %d proposals" % len(proposals))
-    return proposals
+    # per fast5, we want to coalesce all step calling into one file (named by read)
+    output_directory = os.path.join(working_folder.path, "reads")
+    if not os.path.isdir(output_directory): os.mkdir(output_directory)
+    print("[info] writing output to {}".format(output_directory))
+    output_files = list()
+    # iterate over input fast5s
+    for fast5_id in fast5_to_read.iterkeys():
+        # get files
+        files = glob.glob(os.path.join(working_folder.path,
+                                       "marginals*{}*{}".format(fast5_id, CallMethylation.FILE_EXTENSION)))
+        if len(files) != step:
+            print("[error] input fast5 '{}' yielded {} output files, expected {}".format(fast5_id, len(files), step))
+            if len(files) == 0:
+                continue
+
+        # read all lines in all files
+        output_lines = list()
+        for file in files:
+            with open(file, 'r') as input:
+                for line in input:
+                    line = line.split(sep="\t")
+                    line[0] = int(line[0])
+                    output_lines.append(line)
+        # sort based on position
+        output_lines.sort(key=lambda x: x[0])
+
+        # write output
+        output_filename = "{}.tsv".format(fast5_to_read[fast5_id])
+        output_file = os.path.join(output_directory, output_filename)
+        with open(output_file, 'w') as output:
+            output.write("## fast5_input: {}.fast5\n".format(fast5_id))
+            output.write("## read_id: {}\n".format(fast5_to_read[fast5_id]))
+            output.write("## contig: {}\n".format(reference_map_contig_name))
+            output.write("#CHROM\tPOS\tpA\tpC\tpG\tpT\n".format(reference_map_contig_name))
+            for line in output_lines:
+                line = [reference_map_contig_name, str(line[0]), line[2], line[3], line[4], line[5]]
+                output.write("\t".join(line) + "\n")
+        #save
+        output_files.append(output_file)
+
+    # document and return
+    print("[info] wrote {} output files ({} input fast5s) in {}"
+          .format(len(output_files), len(fast5_to_read), output_directory))
+    return output_files
+
+
+def build_fast5_to_read_id_dict(fast5_locations):
+    fast5_to_read_id = dict()
+    for fast5 in fast5_locations:
+        npr = NanoporeRead(fast5, False)
+        read_id = npr.read_label
+        fast5_id = os.path.basename(fast5)[:-6]
+        fast5_to_read_id[fast5_id] = read_id
+    return fast5_to_read_id
 
 
 def update_reference_with_marginal_probs(working_folder, proposals, reference_sequence_string, list_of_fast5s,
