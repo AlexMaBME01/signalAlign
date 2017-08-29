@@ -286,7 +286,7 @@ def scan_for_proposals(working_folder, step, reference_map, reference_sequence_s
 
     for s in xrange(step):
         print("\n[info] starting step %d" % s)
-        saved_step_dir = os.path.join(working_folder, "step_{}".format(s))
+        saved_step_dir = os.path.join(working_folder.path, "step_{}".format(s))
         scan_positions = range(s, reference_sequence_length, step)
         #tpesout: changed this function to update the values in single_contig_reference_map to fit new signalAlign API
         check = make_reference_files_and_alignment_args(working_folder, reference_sequence_string,

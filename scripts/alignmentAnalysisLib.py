@@ -122,6 +122,7 @@ class CallMethylation(object):
         self.sequence = sequence
         self.forward = ".forward." in alignment_file
         self.alignment_file = alignment_file
+        self.alignment_file_name = os.path.basename(alignment_file)
         self.data = None
         self.probs = []
         self.template_calls = []
@@ -252,10 +253,10 @@ class CallMethylation(object):
             out = out_file
         else:
             if self.out_file_prefix is not None:
-                out = "{}.{}.calls".format(self.out_file_prefix, self.alignment_file)
+                out = "{}.{}.calls".format(self.out_file_prefix, self.alignment_file_name)
             else:
-                out = "{}.calls".format(self.alignment_file)
-        print(self.identifier() + "opening %s to write methylation information"
+                out = "{}.calls".format(self.alignment_file_name)
+        print(self.identifier() + "opening {} to write methylation information"
               .format(out))
 
         def output_line():
@@ -263,7 +264,7 @@ class CallMethylation(object):
                 else "{site}\t{strand}\t{A}\t{C}\t{G}\t{T}\t{read}\n"
 
         with open(out, 'a') as fH:
-            file_name = self.alignment_file.split("/")[-1]
+            file_name = self.alignment_file_name
             line = output_line()
 
             for strand, site, prob in self.probs:
