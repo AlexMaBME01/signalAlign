@@ -341,9 +341,17 @@ def exonerated_bwa_pysam(bwa_index, query, temp_sam_path, target_regions=None):
     within TargetRegions
     """
     # align with bwa
-    ok = Bwa.align(bwa_index=bwa_index, query=query, output_sam_path=temp_sam_path)
+    try:
+        ok = Bwa.align(bwa_index=bwa_index, query=query, output_sam_path=temp_sam_path)
+    except Exception, e:
+        print("[exonerated_bwa_pysam] exception with alignment with index:'{}', query:'{}', output:'{}', error:'{}'"
+              .format(bwa_index, query, temp_sam_path, e))
+        raise e
     if not ok:
+        print("[exonerated_bwa_pysam] alignment failed with index:'{}', query:'{}', output:'{}'"
+              .format(bwa_index, query, temp_sam_path))
         return False, False, False
+    print("[exonerated_bwa_pysam]DEBUG: bwa alignment succeeded")
     sam = pysam.Samfile(temp_sam_path, 'r')
     n_aligned_segments = 0
     query_name, flag, reference_name, reference_pos, sam_cigar = None, None, None, None, None
@@ -510,17 +518,29 @@ class Bwa(object):
                 "[Bwa::align] Didn't find index files {}".format(bwa_index + suff)
         assert os.path.exists(query), "[Bwa::align] Didn't find query file {}".format(query)
         cmd = "bwa mem -x ont2d {idx} {query}".format(idx=bwa_index, query=query)
+        cmd = cmd.split()
+        with open(os.devnull, 'w') as FNULL:
+            if subprocess.call(['which', 'bwa'], stdout=FNULL) != 0:
+                if subprocess.call(['which', './bwa'], stdout=FNULL) == 0:
+                    print("[Bwa::align] 'bwa' executable not found.  Using './bwa'")
+                    cmd[0] = './bwa'
+                else:
+                    print("[Bwa::align] 'bwa' executable not found")
         if outerr is None:
             outerr = open(os.devnull, 'w')
         else:
             outerr = open(outerr, 'w')
         try:
             with open(output_sam_path, 'w') as fH:
-                bwa_output = subprocess.check_output(cmd.split(), stderr=outerr)
+                bwa_output = subprocess.check_output(cmd, stderr=outerr)
                 fH.write(bwa_output)
             return True
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError, e1:
+            print("[Bwa::align] CalledProcessError running command {}: {}".format(cmd, str(e1)))
             return False
+        except Exception, e2:
+            print("[Bwa::align] Exception running command {}: {}".format(cmd, str(e2)))
+            raise e2
         finally:
             outerr.close()
 
@@ -1253,7 +1273,7 @@ class SignalAlignment(object):
                 posteriors_file_path = self.destination + read_name + model_label + ".assignments"
 
         # didn't map
-        elif (strand != "+") and (strand != "-"):
+        if (strand != "+") and (strand != "-"):
             print(self.identifier() + "- {read} gave unrecognizable strand flag: {flag}".format(read=read_label, flag=strand),
                   file=sys.stderr)
             temp_folder.remove_folder()
@@ -1263,7 +1283,13 @@ class SignalAlignment(object):
         print(self.identifier() + "prepping for alignment",file=sys.stderr)
 
         # containers and defaults
-        path_to_signalAlign = "./signalMachine"
+        with open(os.devnull, 'w') as FNULL:
+            if subprocess.call(["which", "./signalMachine"], stdout=FNULL) == 0:
+                path_to_signalAlign = "./signalMachine"
+            elif subprocess.call(["which", "signalMachine"], stdout=FNULL) == 0:
+                path_to_signalAlign = subprocess.check_output(["which", "signalMachine"]).strip()
+            else:
+                raise Exception("Could not find instance of signalMachine locally or in PATH")
 
         # flags
 

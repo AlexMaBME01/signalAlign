@@ -117,8 +117,8 @@ class KmerHistogram(object):
 
 
 class CallMethylation(object):
-    def __init__(self, sequence, alignment_file, degenerate_type, kmer_length, label=None, positions=None,
-                 threshold=0.0, out_file=None, step_offset=None):
+    def __init__(self, sequence, alignment_file, degenerate_type, kmer_length, step_offset=None, label=None,
+                 positions=None, threshold=0.0, out_file_prefix=None):
         self.sequence = sequence
         self.forward = ".forward." in alignment_file
         self.alignment_file = alignment_file
@@ -127,7 +127,7 @@ class CallMethylation(object):
         self.template_calls = []
         self.complement_calls = []
         self.parse_alignment()
-        self.out_file = out_file
+        self.out_file_prefix = out_file_prefix
         self.positions = positions
         self.degenerate = degenerate_type
         self.threshold = threshold
@@ -164,25 +164,24 @@ class CallMethylation(object):
         return range(position - (self.kmer_length - 1), position + 1)
 
     def call_methyls(self, positions=None, threshold=0.0):
-        # todo I think "None positions" isn't a use case for us going forward, but I don't want to break the API
-        # if positions is None:
-        #     print(self.identifier() + "finding sites based on GC occurance")
-        #     template_sites = self.find_occurences("C") if self.forward is True else self.find_occurences("G")
-        #     complement_sites = self.find_occurences("G") if self.forward is True else self.find_occurences("C")
         if self.step_offset is not None:
             # the reference could have millions of positions to check, so we recaluclate the positions based
             # on what's in the alignment file and the offset into the step/kmer_length
             print(self.identifier() + "finding sites based on alignment index and step offset")
             min_ref_pos = min(self.data['ref_index']) - self.kmer_length
             max_ref_pos = max(self.data['ref_index']) + self.kmer_length
-            while min_ref_pos % self.kmer_length != 0: min_ref_pos -= 1
-            while max_ref_pos % self.kmer_length != 0: min_ref_pos += 1
+            while (min_ref_pos % self.kmer_length) != 0: min_ref_pos -= 1
+            while (max_ref_pos % self.kmer_length) != 0: max_ref_pos += 1
             template_sites = range(min_ref_pos + self.step_offset, max_ref_pos, self.kmer_length)
             complement_sites = range(min_ref_pos + self.step_offset, max_ref_pos, self.kmer_length)
-        # else:
-        #     print(self.identifier() + "finding sites based on specified positions")
-        #     template_sites = positions['forward'] if self.forward is True else positions['backward']
-        #     complement_sites = positions['backward'] if self.forward is True else positions['forward']
+        elif self.positions is not None:
+            print(self.identifier() + "finding sites based on specified positions")
+            template_sites = positions['forward'] if self.forward is True else positions['backward']
+            complement_sites = positions['backward'] if self.forward is True else positions['forward']
+        else:
+            print(self.identifier() + "finding sites based on GC occurance")
+            template_sites = self.find_occurences("C") if self.forward is True else self.find_occurences("G")
+            complement_sites = self.find_occurences("G") if self.forward is True else self.find_occurences("C")
         print(self.identifier() + "calling methyls for %d template sites and %d complement sites"
               % (len(template_sites), len(complement_sites)))
 
@@ -249,7 +248,13 @@ class CallMethylation(object):
 
     def write(self, out_file=None):
         self.call_methyls(positions=self.positions, threshold=self.threshold)
-        out = out_file if self.out_file is None else self.out_file
+        if out_file is not None:
+            out = out_file
+        else:
+            if self.out_file_prefix is not None:
+                out = "{}.{}.calls".format(self.out_file_prefix, self.alignment_file)
+            else:
+                out = "{}.calls".format(self.alignment_file)
         print(self.identifier() + "opening %s to write methylation information"
               .format(out))
 

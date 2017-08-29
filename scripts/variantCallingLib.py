@@ -119,7 +119,7 @@ def call_sites_with_marginal_probs(data, reference_sequence_string, min_depth=0,
     candidate_sites = []
     add_to_candidates = candidate_sites.append
 
-    print("#POS\tA\tC\tG\tT\tDIFF")
+    # print("#POS\tA\tC\tG\tT\tDIFF")
     for g, x in d.groupby("site"):
         marginal_forward_p = pd.Series(0, ['pA', 'pC', 'pG', 'pT'])
         marginal_backward_p = pd.Series(0, ['pA', 'pC', 'pG', 'pT'])
@@ -148,8 +148,8 @@ def call_sites_with_marginal_probs(data, reference_sequence_string, min_depth=0,
         difference = normed_marginal_probs.max() - normed_marginal_probs["p" + reference_sequence_list[site]]
         add_to_candidates((site, difference))
 
-        print("{}\t{}\t{}\t{}\t{}\t{}".format(site, normed_marginal_probs['pA'], normed_marginal_probs['pC'],
-                                          normed_marginal_probs['pG'], normed_marginal_probs['pT'], difference))
+        # print("{}\t{}\t{}\t{}\t{}\t{}".format(site, normed_marginal_probs['pA'], normed_marginal_probs['pC'],
+        #                                   normed_marginal_probs['pG'], normed_marginal_probs['pT'], difference))
         # if called_base != reference_sequence_list[site]:
         #     if get_sites is False:
         #         print("Changing {orig} to {new} at {site} depth {depth}"
@@ -171,18 +171,30 @@ def call_sites_with_marginal_probs(data, reference_sequence_string, min_depth=0,
 
 def aligner(work_queue, done_queue):
     try:
-        i = 0
+        total_alignments = 0
+        failed_alignments = 0
         for f in iter(work_queue.get, 'STOP'):
-            alignment = SignalAlignment(**f)
-            alignment.run()
-            i += 1
-        print("[aligner] '%s' completed %d alignments" % (current_process().name, i))
+            try:
+                alignment = SignalAlignment(**f)
+                alignment.run()
+            except Exception, e:
+                name = current_process().name
+                message = e.message
+                if message is None or len(message) == 0:
+                    message = "exception:" + str(e)
+                error = "aligner '{}' failed with: {}".format(name, message)
+                print("[aligner] " + error)
+                done_queue.put(error)
+                failed_alignments += 1
+            total_alignments += 1
+        print("[aligner] '%s' completed %d alignments with %d failures"
+              % (current_process().name, total_alignments, failed_alignments))
     except Exception, e:
         name = current_process().name
         message = e.message
         if message is None or len(message) == 0:
             message = "exception:" + str(e)
-        error = "aligner '{}' failed with: {}".format(name, message)
+        error = "CRITICAL: aligner '{}' failed with: {}".format(name, message)
         print("[aligner] " + error)
         done_queue.put(error)
 
@@ -191,6 +203,7 @@ def variant_caller(work_queue, done_queue):
     try:
         i = 0
         for f in iter(work_queue.get, 'STOP'):
+            print("[variant_caller] '{}' invoking CallMethylation with {}".format(current_process().name, f))
             c = CallMethylation(**f)
             c.write()
             i += 1
@@ -206,6 +219,10 @@ def variant_caller(work_queue, done_queue):
 
 
 def run_service(service, service_iterable, service_arguments, workers, iterable_argument):
+    args = service_arguments.keys()
+    args.append(iterable_argument)
+    print("[debug] running service {} with {} workers, {} iterables, and arguments {}"
+          .format(service, workers, len(service_iterable), args))
     # setup workers for multiprocessing
     work_queue = Manager().Queue()
     done_queue = Manager().Queue()
@@ -248,7 +265,8 @@ def make_reference_files_and_alignment_args(working_folder, reference_sequence_s
     return True
 
 
-def scan_for_proposals(working_folder, step, reference_map, reference_sequence_string, list_of_fast5s, alignment_args, workers):
+def scan_for_proposals(working_folder, step, reference_map, reference_sequence_string, list_of_fast5s, alignment_args,
+                       workers, use_saved_alignments=True, save_alignments=True):
     # I'm hacking together the new (improved?) signal align API and the previous version of the api (from when the
     # bonnyDoon script was last working).  The reference map groups by contigs (and is needed by the current SignalAlign
     # API). this script uses the reference sequence string
@@ -268,17 +286,21 @@ def scan_for_proposals(working_folder, step, reference_map, reference_sequence_s
 
     for s in xrange(step):
         print("\n[info] starting step %d" % s)
+        saved_step_dir = os.path.join(working_folder, "step_{}".format(s))
         scan_positions = range(s, reference_sequence_length, step)
         #tpesout: changed this function to update the values in single_contig_reference_map to fit new signalAlign API
         check = make_reference_files_and_alignment_args(working_folder, reference_sequence_string,
                                                         single_contig_reference_map, n_positions=scan_positions)
         assert check, "Problem making degenerate reference for step {step}".format(step=s)
 
-        print("[info] running aligner on %d fast5 files with %d workers" % (len(list_of_fast5s), workers))
-        run_service(aligner, list_of_fast5s, alignment_args, workers, "in_fast5")
-
-        # alignments is the list of alignments to gather proposals from
-        alignments = [x for x in glob.glob(working_folder.path + "*.tsv") if os.stat(x).st_size != 0]
+        # do or get alignments
+        if use_saved_alignments and os.path.isdir(saved_step_dir):
+            alignments = [x for x in glob.glob(os.path.join(saved_step_dir, "*.tsv")) if os.stat(x).st_size != 0]
+            print("[info] using {} saved alignments in {}".format(len(alignments), saved_step_dir))
+        else:
+            print("[info] running aligner on %d fast5 files with %d workers" % (len(list_of_fast5s), workers))
+            run_service(aligner, list_of_fast5s, alignment_args, workers, "in_fast5")
+            alignments = [x for x in glob.glob(os.path.join(working_folder.path, "*.tsv")) if os.stat(x).st_size != 0]
         alignment_count = len(alignments)
 
         if alignment_count == 0:
@@ -287,29 +309,44 @@ def scan_for_proposals(working_folder, step, reference_map, reference_sequence_s
         else:
             print("[info] Found %d alignment files here %s" % (alignment_count, working_folder.path))
 
-        marginal_probability_file = working_folder.add_file_path("marginals.{step}.calls".format(step=s))
+        marginal_probability_prefix = working_folder.add_file_path("marginals.{step}".format(step=s))
 
         proposal_args = {
             "sequence": None,
-            "out_file": marginal_probability_file,
+            "out_file_prefix": marginal_probability_prefix,
             # removed to force use of offset and kmer length
             # "positions": {"forward": scan_positions, "backward": scan_positions},
             "step_offset": s,
             "degenerate_type": alignment_args["degenerate"],
-            "kmer_length": step #todo this is a new param tpesout added, is this the right call?
+            "kmer_length": step
         }
 
         print("[info] running variant_caller on %d alignments files with %d workers" % (alignment_count, workers))
         run_service(variant_caller, alignments, proposal_args, workers, "alignment_file")
 
         # get proposal sites
-        print("[info] calling sites with marginal probabilities from %s" % marginal_probability_file)
-        proposals += call_sites_with_marginal_probs(marginal_probability_file, reference_sequence_string,
-                                                    min_depth=0, get_sites=True)
-        # remove old alignments
-        for f in glob.glob(working_folder.path + "*.tsv"):
-            os.remove(f)
+        prob_glob = os.path.join(working_folder.path, "{}*".format(marginal_probability_prefix))
+        marginal_prob_files = [x for x in
+                               glob.glob(prob_glob)
+                               if os.stat(x).st_size != 0]
+        print("[info] found {} marginal probability files matching {}".format(len(marginal_prob_files), prob_glob))
+        for marginal_prob_file in marginal_prob_files:
+            print("[info] calling sites with marginal probabilities from %s" % marginal_probability_prefix)
+            proposals += call_sites_with_marginal_probs(marginal_prob_file, reference_sequence_string,
+                                                        min_depth=0, get_sites=True)
+        # remove or old alignments
+        files = glob.glob(working_folder.path + "*.tsv")
+        if save_alignments:
+            if not os.path.isdir(saved_step_dir): os.mkdir(saved_step_dir)
+            print("[info] saving {} alignment files into {}".format(len(files), saved_step_dir))
+            for f in files:
+                os.rename(f, os.path.join(saved_step_dir, os.path.basename(f)))
+        else:
+            print("[info] deleting {} alignment files".format(len(files)))
+            for f in files:
+                os.remove(f)
         print("[info] step %d completed\n" % s)
+
     # proposals is a list of lists containing (position, delta_prob) where position in the position in the
     # reference sequence that is being proposed to be edited, and delta_prob is the difference in probability
     # of the reference base to the proposed base
