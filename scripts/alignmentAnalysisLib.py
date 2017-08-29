@@ -191,7 +191,7 @@ class CallMethylation(object):
             total_sites = len(sites)
             print(self.identifier() + "calling {} sites on {} strand with regular_offset {}".format(total_sites, strand, regular_offset))
             next_report = 8
-            i = 1
+            i = 0
             success = False
             start = time.clock()
             try:
@@ -264,7 +264,7 @@ class CallMethylation(object):
             return "{site}\t{strand}\t{c}\t{mc}\t{hmc}\t{read}\n" if self.degenerate in [1, 2] \
                 else "{site}\t{strand}\t{A}\t{C}\t{G}\t{T}\t{read}\n"
 
-        with open(out, 'a') as fH:
+        with open(out, 'w') as fH:
             file_name = self.alignment_file_name
             line = output_line()
 

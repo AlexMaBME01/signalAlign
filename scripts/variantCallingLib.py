@@ -313,7 +313,7 @@ def scan_for_proposals(working_folder, step, reference_map, reference_sequence_s
             print("[error] Didn't find any alignment files here {}".format(working_folder.path))
             sys.exit(1)
         else:
-            print("[info] Found %d alignment files ({} input fast5s) here %s" %
+            print("[info] Found %d alignment files (%d input fast5s) here %s" %
                   (alignment_count, len(list_of_fast5s), working_folder.path))
 
         marginal_probability_prefix = working_folder.add_file_path("marginals.{step}".format(step=s))
@@ -364,7 +364,7 @@ def scan_for_proposals(working_folder, step, reference_map, reference_sequence_s
         for file in files:
             with open(file, 'r') as input:
                 for line in input:
-                    line = line.split(sep="\t")
+                    line = line.split("\t")
                     line[0] = int(line[0])
                     output_lines.append(line)
         # sort based on position
