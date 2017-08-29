@@ -323,10 +323,10 @@ def main(args):
 
     # get the sites that have proposed edits
     print("\n\nbonnyDoon - scanning for proposals with %d fast5s and step %d" % (len(fast5s), STEP))
-    proposals = scan_for_proposals(temp_folder, STEP, reference_map, reference_sequence_string, fast5s, alignment_args, args.nb_jobs)
-    print("\n\nbonnyDoon - grouping sites for %d proposals" % len(proposals))
-    proposals = group_sites_in_window2([x[0] for x in proposals], STEP)
-    print("\n\nfinal proposals:\n%s" % str(proposals))
+    output_files = scan_for_proposals(temp_folder, STEP, reference_map, reference_sequence_string, fast5s, alignment_args, args.nb_jobs)
+    print("\nbonnyDoon - got {} output files:".format(len(output_files)))
+    for output_file in output_files:
+        print("\t{}".format(output_file))
     print("\n\nbonnyDoon - fin\n")
 
     return

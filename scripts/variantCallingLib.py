@@ -266,7 +266,7 @@ def make_reference_files_and_alignment_args(working_folder, reference_sequence_s
 
 
 def scan_for_proposals(working_folder, step, reference_map, reference_sequence_string, list_of_fast5s, alignment_args,
-                       workers, use_saved_alignments=False, save_alignments=True):
+                       workers, use_saved_alignments=True, save_alignments=True):
     # I'm hacking together the new (improved?) signal align API and the previous version of the api (from when the
     # bonnyDoon script was last working).  The reference map groups by contigs (and is needed by the current SignalAlign
     # API). this script uses the reference sequence string
