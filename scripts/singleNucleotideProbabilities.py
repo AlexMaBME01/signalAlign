@@ -222,7 +222,7 @@ def main(args):
     args = parse_args()
 
     command_line = " ".join(sys.argv[:])
-    print("bonnyDoon - Command Line: {cmdLine}\n".format(cmdLine=command_line), file=sys.stderr)
+    print("[singleNucleotideProbabilities] Command Line: {cmdLine}\n".format(cmdLine=command_line), file=sys.stderr)
 
     # get absolute paths to inputs
     args.files_dir           = resolvePath(args.files_dir)
@@ -259,7 +259,7 @@ def main(args):
 
     # get the (input) reference sequence
     if not os.path.isfile(args.ref):
-        print("bonnyDoon - Did not find valid reference file", file=sys.stderr)
+        print("[singleNucleotideProbabilities] Did not find valid reference file", file=sys.stderr)
         sys.exit(1)
 
     # make a working folder in the specified directory
@@ -278,12 +278,12 @@ def main(args):
 
     # get bwa index
     if args.bwt is not None:
-        print("bonnyDoon - using provided BWT %s" % args.bwt)
+        print("[singleNucleotideProbabilities] using provided BWT %s" % args.bwt)
         bwa_ref_index = args.bwt
     else:
-        print("bonnyDoon - indexing reference at %s" % args.ref, file=sys.stderr)
+        print("[singleNucleotideProbabilities] indexing reference at %s" % args.ref, file=sys.stderr)
         bwa_ref_index = get_bwa_index(args.ref, temp_dir_path)
-        print("bonnyDoon - indexing reference, done", file=sys.stderr)
+        print("[singleNucleotideProbabilities] indexing reference, done", file=sys.stderr)
 
     # alignment args are the parameters to the HMM/HDP model, and don't change
     alignment_args = {
@@ -307,14 +307,14 @@ def main(args):
     #TODO you could save alignments by altering the above "destination" parameter
 
     # get the sites that have proposed edits
-    print("\n\nsingleNucleotideProbabilities - scanning for proposals with %d fast5s" % len(fast5s))
+    print("\n\n[singleNucleotideProbabilities] scanning for proposals with %d fast5s" % len(fast5s))
     output_files = discover_single_nucleotide_probabilities(temp_folder, args.kmer_size, reference_map,
                                                             reference_sequence_string, fast5s, alignment_args,
                                                             args.nb_jobs, output_directory=args.out)
-    print("\nsingleNucleotideProbabilities - got {} output files:".format(len(output_files)))
+    print("\n[singleNucleotideProbabilities] got {} output files:".format(len(output_files)))
     for output_file in output_files:
         print("\t{}".format(output_file))
-    print("\n\nsingleNucleotideProbabilities - fin\n")
+    print("\n\n[singleNucleotideProbabilities] fin\n")
 
     return
 
