@@ -232,7 +232,6 @@ def update_reference(data, reference_sequence, min_depth=0, get_sites=False):
     else:
         return ''.join(ref)
 
-
 def main(args):
     # parse args
     args = parse_args()
@@ -323,7 +322,8 @@ def main(args):
 
     # get the sites that have proposed edits
     print("\n\nbonnyDoon - scanning for proposals with %d fast5s and step %d" % (len(fast5s), STEP))
-    output_files = scan_for_proposals(temp_folder, STEP, reference_map, reference_sequence_string, fast5s, alignment_args, args.nb_jobs)
+    output_files = scan_for_proposals(temp_folder, STEP, reference_map, reference_sequence_string, fast5s,
+                                      alignment_args, args.nb_jobs, output_directory=args.out)
     print("\nbonnyDoon - got {} output files:".format(len(output_files)))
     for output_file in output_files:
         print("\t{}".format(output_file))

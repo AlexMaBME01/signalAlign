@@ -6,3 +6,4 @@ externalTools/lastz-distrib-1.03.54/src/lastz_D
 *.egg-info
 *.pyc
 .idea
+scripts/serviceCourse
