@@ -201,13 +201,25 @@ def aligner(work_queue, done_queue):
 
 def variant_caller(work_queue, done_queue):
     try:
-        i = 0
+        total_calls = 0
+        failed_calls = 0
         for f in iter(work_queue.get, 'STOP'):
-            print("[variant_caller] '{}' invoking CallMethylation with {}".format(current_process().name, f))
-            c = CallMethylation(**f)
-            c.write()
-            i += 1
-        print("[variant_caller] '%s' completed %d variant calls" % (current_process().name, i))
+            try:
+                print("[variant_caller] '{}' invoking CallMethylation with {}".format(current_process().name, f))
+                c = CallMethylation(**f)
+                c.write()
+            except Exception, e:
+                name = current_process().name
+                message = e.message
+                if message is None or len(message) == 0:
+                    message = "exception:" + str(e)
+                error = "variant_caller '{}' failed with: {}".format(name, message)
+                print("[variant_caller] " + error)
+                done_queue.put(error)
+                failed_calls += 1
+            total_calls += 1
+        print("[variant_caller] '%s' completed %d calls with %d failures"
+              % (current_process().name, total_calls, failed_calls))
     except Exception, e:
         name = current_process().name
         message = e.message
@@ -389,17 +401,6 @@ def scan_for_proposals(working_folder, step, reference_map, reference_sequence_s
     print("[info] wrote {} output files ({} input fast5s) in {}"
           .format(len(output_files), len(fast5_to_read), output_directory))
     return output_files
-
-
-def build_fast5_to_read_id_dict(fast5_locations):
-    fast5_to_read_id = dict()
-    for fast5 in fast5_locations:
-        npr = NanoporeRead(fast5, False)
-        read_id = npr.read_label
-        fast5_id = os.path.basename(fast5)[:-6]
-        fast5_to_read_id[fast5_id] = read_id
-    return fast5_to_read_id
-
 
 def update_reference_with_marginal_probs(working_folder, proposals, reference_sequence_string, list_of_fast5s,
                                          alignment_args, workers):

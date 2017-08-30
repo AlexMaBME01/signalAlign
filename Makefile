@@ -33,7 +33,7 @@ clean :
 
 pip_install:
 	pip install -e .
-	ln -s ${rootPath}/serviceCourse ${rootPath}/scripts/serviceCourse
+	-ln -s ${CURDIR}/serviceCourse ${CURDIR}/scripts/serviceCourse
 
 signalAlignLib : ${libPath}/signalAlignLib.a
 
