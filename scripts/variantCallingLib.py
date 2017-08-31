@@ -252,7 +252,6 @@ def run_service(service, service_iterable, service_arguments, workers, iterable_
     done_queue.put('STOP')
 
 
-#todo: deprecated (this should be removed)
 def make_reference_files_and_alignment_args(working_folder, reference_sequence_string, reference_map,
                                             n_positions=None):
     # make paths for working txt files that contain this STEPs Ns

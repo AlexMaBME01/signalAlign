@@ -1139,7 +1139,8 @@ class SignalAlignment(object):
                  degenerate,
                  twoD_chemistry=False,
                  target_regions=None,
-                 output_format="full"):
+                 output_format="full",
+                 remove_temp_folder=True):
         self.in_fast5           = in_fast5            # fast5 file to align
         self.reference_map      = reference_map       # map with paths to reference sequences
         self.path_to_EC_refs    = path_to_EC_refs     # place where the reference sequence with ambiguous characters is
@@ -1153,6 +1154,7 @@ class SignalAlignment(object):
         self.output_format      = output_format       # smaller output files
         self.degenerate         = degenerate          # set of nucleotides for degenerate characters
         self.twoD_chemistry     = twoD_chemistry      # flag for 2D sequencing runs
+        self.remove_temp_folder = remove_temp_folder
 
         # if we're using an input hmm, make sure it exists
         if (in_templateHmm is not None) and os.path.isfile(in_templateHmm):
@@ -1401,7 +1403,8 @@ class SignalAlignment(object):
         # run
         print(self.identifier() + "running command: ", command, end="\n", file=sys.stderr)
         subprocess.check_call(command.split())
-        temp_folder.remove_folder()
+        if self.remove_temp_folder:
+            temp_folder.remove_folder()
         print(self.identifier() + "command completed successfully", end="\n", file=sys.stderr)
         return True
 

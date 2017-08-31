@@ -10,6 +10,7 @@ from serviceCourse.file_handlers import FolderHandler
 from argparse import ArgumentParser
 import glob
 
+
 def parse_args():
     parser = ArgumentParser(description=__doc__)
 
@@ -19,6 +20,9 @@ def parse_args():
     parser.add_argument('--ref', '-r', action='store',
                         dest='ref', required=True, type=str,
                         help="reference sequence to align to, in FASTA")
+    parser.add_argument('--output_location', '-o', action='store', dest='out',
+                        required=True, type=str, default=None,
+                        help="directory to put the alignments")
     parser.add_argument('--in_template_hmm', '-T', action='store', dest='in_T_Hmm',
                         required=False, type=str, default=None,
                         help="input HMM for template events, if you don't want the default")
@@ -48,25 +52,13 @@ def parse_args():
                         default=4, type=int, help="number of jobs to run concurrently")
     parser.add_argument('--nb_files', '-n', action='store', dest='nb_files', required=False,
                         default=500, type=int, help="maximum number of reads to align")
-    # todo help string
-    parser.add_argument('--cycles', dest='cycles', default=1, required=False, type=int)
-
-    parser.add_argument('--output_location', '-o', action='store', dest='out',
-                        required=True, type=str, default=None,
-                        help="directory to put the alignments")
-    # todo help string
-    parser.add_argument('--corrected', dest='corrected', required=False, default='corrected.fa')
-
-    # todo added by tpesout (from master, with new signalAlign API)
     parser.add_argument("--bwt", action='store', dest="bwt", default=None, required=False,
                         help="path to BWT files. example: ../ref.fasta")
     parser.add_argument("--kmer_size", action='store', dest="kmer_size", default=5, required=False,
                         help="size of kmers in fast5 file")
 
-    # todo these are used by process_reference_fasta, but maybe aren't needed for this script
-    # parser.add_argument('--ambig_char', '-X', action='store', required=False, default="X", type=str, dest='ambig_char',
-    #                     help="Character to substitute at positions, default is 'X'.")
-    # parser.add_argument("--motif", action="store", dest="motif_key", default=None)
+    parser.add_argument("--validate", action='store', dest='validation_file', default=None, required=False,
+                        help="validate an output file as compared to its fast5 file (only performs this action)")
 
     args = parser.parse_args()
     return args
@@ -90,7 +82,6 @@ def build_fast5_to_read_id_dict(fast5_locations):
     return fast5_to_read_id
 
 
-
 def discover_single_nucleotide_probabilities(working_folder, step, reference_map, reference_sequence_string,
                                              list_of_fast5s, alignment_args, workers,
                                              output_directory=None, use_saved_alignments=True, save_alignments=True):
@@ -108,10 +99,7 @@ def discover_single_nucleotide_probabilities(working_folder, step, reference_map
     reference_sequence_length = len(reference_sequence_string)
     assert reference_sequence_length > 0, "Got empty string for reference sequence."
 
-    # proposals will contain the sites that we're going to change to N
-    #todo remove this
-    proposals = []
-
+    # read fast5s and extract read ids
     fast5_to_read = build_fast5_to_read_id_dict(list_of_fast5s)
     print("[info] built map of fast5 identifiers to read ids with {} elements".format(len(fast5_to_read)))
 
@@ -224,6 +212,12 @@ def main(args):
     command_line = " ".join(sys.argv[:])
     print("[singleNucleotideProbabilities] Command Line: {cmdLine}\n".format(cmdLine=command_line), file=sys.stderr)
 
+
+    # first: see if we want to validate and return
+    if args.validation_file is not None:
+        validate_snp_file(args.files_dir, args.validation_file, args.ref)
+        return 0
+
     # get absolute paths to inputs
     args.files_dir           = resolvePath(args.files_dir)
     args.ref                 = resolvePath(args.ref)
@@ -303,6 +297,7 @@ def main(args):
         "constraint_trim": args.constraint_trim,
         "target_regions": None,
         "degenerate": degenerate_enum(args.degenerate),
+        "remove_temp_folder": False
     }
     #TODO you could save alignments by altering the above "destination" parameter
 
@@ -314,9 +309,105 @@ def main(args):
     print("\n[singleNucleotideProbabilities] got {} output files:".format(len(output_files)))
     for output_file in output_files:
         print("\t{}".format(output_file))
+
+    #validation
+    if len(output_files) != 0:
+        import random
+        test_file = output_files[random.randrange(0, len(output_files -1))]
+        print("\n[singleNucleotideProbabilities] validating file {}".format(test_file))
+
     print("\n\n[singleNucleotideProbabilities] fin\n")
 
-    return
+    return 0
+
+def validate_snp_file(fast5_folder, snp_file, reference_sequence_path):
+    fast5_file = None
+    consensus_sequence = list()
+    header_positions = list()
+    header_characters = list()
+    first_pos = None
+    last_pos = None
+    with open(snp_file, 'r') as snp:
+        for line in snp:
+            if line.startswith("##") and "fast5_input" in line:
+                fast5_name = line.split(":")[1].strip()
+                fast5_file = os.path.join(fast5_folder, fast5_name)
+                if not os.path.isfile(fast5_file):
+                    raise Exception("Could not find fast5 file: {}".format(fast5_file))
+            elif line.startswith("#"):
+                line = line.split("\t")
+                i = 0
+                for l in line:
+                    if l.startswith("p"):
+                        header_positions.append(i)
+                        header_characters.append(l[1])
+                    i += 1
+            else:
+                line = line.split("\t")
+                #positions (for getting reference)
+                if first_pos is None: first_pos = int(line[1])
+                last_pos = int(line[1])
+                #consensus
+                max_prob = -1.0
+                max_prob_idx = None
+                idx = 0
+                for pos in header_positions:
+                    prob = float(line[pos].strip())
+                    if prob > max_prob:
+                        max_prob = prob
+                        max_prob_idx = idx
+                    idx += 1
+                consensus_sequence.append(header_characters[max_prob_idx])
+
+    # get sequences
+    consensus_sequence = "".join(consensus_sequence)
+    full_reference_sequence = get_first_sequence(reference_sequence_path)
+    reference_sequence = full_reference_sequence[min(first_pos, last_pos):max(first_pos, last_pos)+1]
+    fast5 = NanoporeRead(fast5_file)
+    fast5_sequence = fast5.template_read if len(fast5.template_read) != 0 else fast5.complement_read
+
+    # print sequences
+    f5_cent = int(len(fast5_sequence) / 2)
+    print("FAST5 Sequence Summary:\n" +
+          "\tlength:       {}\n".format(len(fast5_sequence)) +
+          "\tpos 0 to 32:  {} ({})\n".format(fast5_sequence[:32], fast5_sequence[:32] in full_reference_sequence) +
+          "\tpos center:   {} ({})\n".format(fast5_sequence[f5_cent-16:f5_cent+16], fast5_sequence[f5_cent-16:f5_cent+16] in full_reference_sequence) +
+          "\tpos -32 to 0: {} ({})\n".format(fast5_sequence[-32:], fast5_sequence[-32:] in full_reference_sequence))
+    c_cent = int(len(consensus_sequence) / 2)
+    print("Consensus Sequence Sumamry:\n" +
+          "\tstart_pos:    {}\n".format(first_pos) +
+          "\tend_pos:      {}\n".format(last_pos) +
+          "\tlength:       {}\n".format(len(consensus_sequence)) +
+          "\tpos 0 to 32:  {} ({})\n".format(consensus_sequence[:32], consensus_sequence[:32] in full_reference_sequence) +
+          "\tpos center:   {} ({})\n".format(consensus_sequence[c_cent-16:c_cent+16], consensus_sequence[c_cent-16:c_cent+16] in full_reference_sequence) +
+          "\tpos -32 to 0: {} ({})\n".format(consensus_sequence[-32:],consensus_sequence[-32:] in full_reference_sequence))
+    ref_cent = int(len(reference_sequence) / 2)
+    print("Reference Sequence Summary:\n" +
+          "\ttotal_length: {}\n".format(len(full_reference_sequence)) +
+          "\tlength:       {}\n".format(len(reference_sequence)) +
+          "\tpos 0 to 32:  {}\n".format(reference_sequence[:32]) +
+          "\tpos center:   {}\n".format(reference_sequence[ref_cent-16:ref_cent+16]) +
+          "\tpos -32 to 0: {}\n".format(reference_sequence[-32:]))
+
+    # reverse complements
+    fast5_sequence = reverse_complement(fast5_sequence)
+    consensus_sequence = reverse_complement(consensus_sequence)
+    f5_cent = int(len(fast5_sequence) / 2)
+    print("\nReverse Complement FAST5 Sequence Summary:\n" +
+          "\tpos 0 to 32:  {} ({})\n".format(fast5_sequence[:32], fast5_sequence[:32] in full_reference_sequence) +
+          "\tpos center:   {} ({})\n".format(fast5_sequence[f5_cent-16:f5_cent+16], fast5_sequence[f5_cent-16:f5_cent+16] in full_reference_sequence) +
+          "\tpos -32 to 0: {} ({})\n".format(fast5_sequence[-32:], fast5_sequence[-32:] in full_reference_sequence))
+    c_cent = int(len(consensus_sequence) / 2)
+    print("Reverse Complement Consensus Sequence Sumamry:\n" +
+          "\tpos 0 to 32:  {} ({})\n".format(consensus_sequence[:32], consensus_sequence[:32] in full_reference_sequence) +
+          "\tpos center:   {} ({})\n".format(consensus_sequence[c_cent-16:c_cent+16], consensus_sequence[c_cent-16:c_cent+16] in full_reference_sequence) +
+          "\tpos -32 to 0: {} ({})\n".format(consensus_sequence[-32:],consensus_sequence[-32:] in full_reference_sequence))
+
+    print("\nWhole Sequences:")
+    print("fast5>     {}".format(fast5_sequence))
+    print("consensus> {}".format(consensus_sequence))
+    print("reference> {}".format(reference_sequence))
+
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv))
