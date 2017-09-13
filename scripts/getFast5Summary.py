@@ -70,7 +70,9 @@ def main():
             print("Error reading file {}: {}".format(file, e), file=sys.stderr)
 
     if args.desired_read_ids is not None:
-        print("Found {} / {} desired read ids")
+        print("Found {} / {} desired read ids".format(output_count, len(read_ids)), file=sys.stderr)
+    else:
+        print("Found {} read ids".format(output_count), file=sys.stderr)
 
 
 if __name__ == "__main__":
