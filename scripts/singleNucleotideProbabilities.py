@@ -180,8 +180,8 @@ def validate_snp_file(fast5_folder, snp_file, reference_sequence_path):
           "\tpos -32 to 0: {} ({})\n".format(consensus_sequence[-32:],consensus_sequence[-32:] in full_reference_sequence))
 
 
-def discover_single_nucleotide_probabilities(working_folder, step, reference_map, reference_sequence_string,
-                                             list_of_fast5s, alignment_args, workers,
+def discover_single_nucleotide_probabilities(working_folder, kmer_length, reference_map, reference_sequence_string,
+                                             list_of_fast5s, alignment_args, workers, step_size = 10,
                                              output_directory=None, use_saved_alignments=True, save_alignments=True):
     # I'm hacking together the new (improved?) signal align API and the previous version of the api (from when the
     # bonnyDoon script was last working).  The reference map groups by contigs (and is needed by the current SignalAlign
@@ -201,11 +201,10 @@ def discover_single_nucleotide_probabilities(working_folder, step, reference_map
     fast5_to_read = build_fast5_to_read_id_dict(list_of_fast5s)
     print("[info] built map of fast5 identifiers to read ids with {} elements".format(len(fast5_to_read)))
 
-    for s in xrange(step):
-        print("\n[info] starting step %d" % s)
+    for s in xrange(step_size):
+        print("\n[info] starting step %d / %d" % (s, step_size))
         saved_step_dir = os.path.join(working_folder.path, "step_{}".format(s))
-        scan_positions = range(s, reference_sequence_length, step)
-        #tpesout: changed this function to update the values in single_contig_reference_map to fit new signalAlign API
+        scan_positions = range(s, reference_sequence_length, step_size)
         check = make_reference_files_and_alignment_args(working_folder, reference_sequence_string,
                                                         single_contig_reference_map, n_positions=scan_positions)
         assert check, "Problem making degenerate reference for step {step}".format(step=s)
@@ -234,9 +233,10 @@ def discover_single_nucleotide_probabilities(working_folder, step, reference_map
             "out_file_prefix": marginal_probability_prefix,
             # removed to force use of offset and kmer length
             # "positions": {"forward": scan_positions, "backward": scan_positions},
+            "step_size": step_size,
             "step_offset": s,
             "degenerate_type": alignment_args["degenerate"],
-            "kmer_length": step
+            "kmer_length": kmer_length
         }
 
         print("[info] running variant_caller on %d alignments files with %d workers" % (alignment_count, workers))
@@ -266,8 +266,8 @@ def discover_single_nucleotide_probabilities(working_folder, step, reference_map
         # get files
         files = glob.glob(os.path.join(working_folder.path,
                                        "marginals*{}*{}".format(fast5_id, CallMethylation.FILE_EXTENSION)))
-        if len(files) != step:
-            print("[error] input fast5 '{}' yielded {} output files, expected {}".format(fast5_id, len(files), step))
+        if len(files) != step_size:
+            print("[error] input fast5 '{}' yielded {} output files, expected {}".format(fast5_id, len(files), step_size))
             if len(files) == 0:
                 continue
 
@@ -385,9 +385,6 @@ def main(args):
         "in_complementHmm": args.in_C_Hmm,
         "in_templateHdp": args.templateHDP,
         "in_complementHdp": args.complementHDP,
-        # todo these break signalAlignLib:SignalAlignment ctor
-        # "banded": args.banded,
-        # "sparse_output": True,
         "threshold": args.threshold,
         "diagonal_expansion": args.diag_expansion,
         "constraint_trim": args.constraint_trim,

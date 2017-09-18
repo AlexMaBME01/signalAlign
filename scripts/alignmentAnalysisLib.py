@@ -118,7 +118,7 @@ class KmerHistogram(object):
 
 class CallMethylation(object):
     FILE_EXTENSION = "calls"
-    def __init__(self, sequence, alignment_file, degenerate_type, kmer_length, step_offset=None, label=None,
+    def __init__(self, sequence, alignment_file, degenerate_type, kmer_length, step_size, step_offset=None, label=None,
                  positions=None, threshold=0.0, out_file_prefix=None):
         self.sequence = sequence
         self.forward = ".forward." in alignment_file
@@ -134,6 +134,7 @@ class CallMethylation(object):
         self.degenerate = degenerate_type
         self.threshold = threshold
         self.kmer_length = kmer_length
+        self.step_size = step_size
         self.step_offset = step_offset
 
         if label is not None:
@@ -170,12 +171,12 @@ class CallMethylation(object):
             # the reference could have millions of positions to check, so we recaluclate the positions based
             # on what's in the alignment file and the offset into the step/kmer_length
             print(self.identifier() + "finding sites based on alignment index and step offset")
-            min_ref_pos = min(self.data['ref_index']) - self.kmer_length
-            max_ref_pos = max(self.data['ref_index']) + self.kmer_length
-            while (min_ref_pos % self.kmer_length) != 0: min_ref_pos -= 1
-            while (max_ref_pos % self.kmer_length) != 0: max_ref_pos += 1
-            template_sites = range(min_ref_pos + self.step_offset, max_ref_pos, self.kmer_length)
-            complement_sites = range(min_ref_pos + self.step_offset, max_ref_pos, self.kmer_length)
+            min_ref_pos = min(self.data['ref_index']) - self.step_size
+            max_ref_pos = max(self.data['ref_index']) + self.step_size
+            while (min_ref_pos % self.step_size) != 0: min_ref_pos -= 1
+            while (max_ref_pos % self.step_size) != 0: max_ref_pos += 1
+            template_sites = range(min_ref_pos + self.step_offset, max_ref_pos, self.step_size)
+            complement_sites = range(min_ref_pos + self.step_offset, max_ref_pos, self.step_size)
         elif self.positions is not None:
             print(self.identifier() + "finding sites based on specified positions")
             template_sites = positions['forward'] if self.forward is True else positions['backward']
@@ -221,8 +222,9 @@ class CallMethylation(object):
                         else {"A": 0, "C": 0, "G": 0, "T": 0}
 
                     for r in select.itertuples():
-                        #kmer_length = len(r[5])
-                        #offset = site - r[1] if regular_offset is True else 5 - (site - r[1])
+                        if len(r[5]) != self.kmer_length:
+                            raise Exception("Got kmer_length mismatch!  Expected {} but got {} in {}.  Row:\n\t{}"
+                                            .format(self.kmer_length, len(r[5]), self.alignment_file_name, r))
                         offset = site - r[1] if regular_offset is True else (self.kmer_length - 1) - (site - r[1])
                         call = r[5][offset]
                         marginal_probs[call] += r[4]
