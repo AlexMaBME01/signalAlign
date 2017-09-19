@@ -208,7 +208,7 @@ def discover_single_nucleotide_probabilities(working_folder, kmer_length, refere
     print("[info] built map of fast5 identifiers to read ids with {} elements".format(len(fast5_to_read)))
 
     for s in xrange(step_size):
-        print("\n[info] starting step %d / %d" % (s, step_size))
+        print("\n[info] starting step %d / %d" % (s + 1, step_size))
         saved_step_dir = os.path.join(working_folder.path, "step_{}".format(s))
         scan_positions = range(s, reference_sequence_length, step_size)
         check = make_reference_files_and_alignment_args(working_folder, reference_sequence_string,
@@ -330,6 +330,10 @@ def main(args):
     args.templateHDP         = resolvePath(args.templateHDP)
     args.complementHDP       = resolvePath(args.complementHDP)
     args.target_regions      = resolvePath(args.target_regions)
+
+    # assert integers
+    args.step_size = int(args.step_size)
+    args.kmer_size = int(args.kmer_size)
 
     start_message = """
 #   Starting BonnyDoon Error-Correction
