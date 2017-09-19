@@ -118,6 +118,8 @@ class KmerHistogram(object):
 
 class CallMethylation(object):
     FILE_EXTENSION = "calls"
+    TEMPLATE_ID = 't'
+    COMPLEMENT_ID = 'c'
     def __init__(self, sequence, alignment_file, degenerate_type, kmer_length, step_size, step_offset=None, label=None,
                  positions=None, threshold=0.0, out_file_prefix=None):
         self.sequence = sequence
@@ -246,8 +248,8 @@ class CallMethylation(object):
         template_offset = True if self.forward is True else False
         complement_offset = False if self.forward is True else True
 
-        get_calls(template_sites, 't', template_offset)
-        get_calls(complement_sites, 'c', complement_offset)
+        get_calls(template_sites, CallMethylation.TEMPLATE_ID, template_offset)
+        get_calls(complement_sites, CallMethylation.COMPLEMENT_ID, complement_offset)
         print(self.identifier() + "got %d total probabilities" % len(self.probs))
 
     def write(self, out_file=None):

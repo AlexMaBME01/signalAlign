@@ -65,6 +65,7 @@ def parse_args():
     args = parser.parse_args()
     return args
 
+
 def resolvePath(p):
     if p is None:
         return None
@@ -84,8 +85,27 @@ def build_fast5_to_read_id_dict(fast5_locations):
     return fast5_to_read_id
 
 
-def validate_snp_file(fast5_folder, snp_file, reference_sequence_path):
-    fast5_file = None
+def validate_snp_directory(snp_directory, reference_sequence_path, print_summary=False):
+    all_identities = list()
+    all_lengths = list()
+    all_identity_ratios = list()
+    full_reference_sequence = get_first_sequence(reference_sequence_path).upper()
+    files = glob.glob(os.path.join(snp_directory, "*.tsv"))
+    print("\n[singleNucleotideProbabilities] Validating {} files in {}\n".format(len(files), snp_directory))
+    for file in files:
+        identity, length = validate_snp_file(file, full_reference_sequence,
+                                             print_sequences=False, print_summary=print_summary)
+        all_identities.append(identity)
+        all_lengths.append(length)
+        all_identity_ratios.append(1.0 * identity / length)
+    print("\n[singleNucleotideProbabilities] Summary of {} files:".format(len(files)))
+    print("\tAVG Identity:       {}".format(np.mean(all_identities)))
+    print("\tAVG Length:         {}".format(np.mean(all_lengths)))
+    print("\tAVG Identity Ratio: {}".format(np.mean(all_identity_ratios)))
+
+
+def validate_snp_file(snp_file, full_reference_sequence, print_sequences=False, print_summary=False):
+    identifier = os.path.basename(snp_file)
     consensus_sequence = list()
     header_positions = list()
     header_characters = list()
@@ -94,26 +114,30 @@ def validate_snp_file(fast5_folder, snp_file, reference_sequence_path):
     duplicated_positions = 0
     with open(snp_file, 'r') as snp:
         for line in snp:
-            if line.startswith("##") and "fast5_input" in line:
-                fast5_name = line.split(":")[1].strip()
-                fast5_file = os.path.join(fast5_folder, fast5_name)
-                if not os.path.isfile(fast5_file):
-                    print("[validation] Could not find fast5 file: {}".format(fast5_file))
-                    fast5_file = None
+            if line.startswith("##"):
+                continue
             elif line.startswith("#"):
                 line = line.split("\t")
                 i = 0
                 for l in line:
                     if l.startswith("p"):
                         header_positions.append(i)
-                        header_characters.append(l[1])
+                        header_characters.append(l[1].upper())
                     i += 1
             else:
                 line = line.split("\t")
-                #positions (for getting reference)
+                # positions
                 pos = int(line[1])
+                # set first_position (for reference matching)
                 if first_pos is None: first_pos = pos
-                if last_pos == pos: duplicated_positions += 1
+                # for cases where positions are duplicated or missing
+                if last_pos is not None:
+                    if last_pos >= pos:
+                        duplicated_positions += 1
+                        continue
+                    while last_pos + 1 < pos:
+                        consensus_sequence.append("-")
+                        last_pos += 1
                 last_pos = pos
                 #consensus
                 max_prob = -1.0
@@ -129,61 +153,31 @@ def validate_snp_file(fast5_folder, snp_file, reference_sequence_path):
 
     # get sequences
     consensus_sequence = "".join(consensus_sequence)
-    full_reference_sequence = get_first_sequence(reference_sequence_path)
     reference_sequence = full_reference_sequence[min(first_pos, last_pos):max(first_pos, last_pos)+1]
-    if fast5_file is not None:
-        fast5 = NanoporeRead(fast5_file)
-        fast5_sequence = fast5.template_read if len(fast5.template_read) != 0 else fast5.complement_read
 
     # sanity check
     if duplicated_positions > 0:
-        print("Found {} duplicated positions!\n".format(duplicated_positions))
-    # print sequences
-    print("\nWhole Sequences:")
-    print("reference      >{}".format(reference_sequence))
-    print("consensus      >{}".format(consensus_sequence))
-    print("consensus (RC) >{}".format(reverse_complement(consensus_sequence)))
-    if fast5_file is not None:
-        print("fast5          >{}".format(fast5_sequence))
-        print("fast5 (RC)     >{}".format(reverse_complement(fast5_sequence)))
+        print("{}: Found {} duplicated positions!\n"
+              .format(identifier, duplicated_positions))
 
-    # summaries
-    ref_cent = int(len(reference_sequence) / 2)
-    print("Reference Sequence Summary:\n" +
-          "\ttotal_length: {}\n".format(len(full_reference_sequence)) +
-          "\tlength:       {}\n".format(len(reference_sequence)) +
-          "\tpos 0 to 32:  {}\n".format(reference_sequence[:32]) +
-          "\tpos center:   {}\n".format(reference_sequence[ref_cent-16:ref_cent+16]) +
-          "\tpos -32 to 0: {}\n".format(reference_sequence[-32:]))
+    # printing full sequences
+    if print_sequences:
+        print("{}: Whole Sequences:".format(identifier))
+        print("\treference:  {}".format(reference_sequence))
+        print("\tconsensus:  {}".format(consensus_sequence))
+        print("\tcomplement: {}".format(reverse_complement(consensus_sequence, complement=True, reverse=False)))
 
-    c_cent = int(len(consensus_sequence) / 2)
-    print("Consensus Sequence Sumamry:\n" +
-          "\tstart_pos:    {}\n".format(first_pos) +
-          "\tend_pos:      {}\n".format(last_pos) +
-          "\tlength:       {}\n".format(len(consensus_sequence)) +
-          "\tpos 0 to 32:  {} ({})\n".format(consensus_sequence[:32], consensus_sequence[:32] in full_reference_sequence) +
-          "\tpos center:   {} ({})\n".format(consensus_sequence[c_cent-16:c_cent+16], consensus_sequence[c_cent-16:c_cent+16] in full_reference_sequence) +
-          "\tpos -32 to 0: {} ({})\n".format(consensus_sequence[-32:],consensus_sequence[-32:] in full_reference_sequence))
-    consensus_sequence = reverse_complement(consensus_sequence)
-    c_cent = int(len(consensus_sequence) / 2)
-    print("Reverse Complement Consensus Sequence Sumamry:\n" +
-          "\tpos 0 to 32:  {} ({})\n".format(consensus_sequence[:32], consensus_sequence[:32] in full_reference_sequence) +
-          "\tpos center:   {} ({})\n".format(consensus_sequence[c_cent-16:c_cent+16], consensus_sequence[c_cent-16:c_cent+16] in full_reference_sequence) +
-          "\tpos -32 to 0: {} ({})\n".format(consensus_sequence[-32:],consensus_sequence[-32:] in full_reference_sequence))
+    length = 0
+    identity = 0
+    for c, r in zip(consensus_sequence, reference_sequence):
+        length += 1
+        if c == r: identity += 1
 
-    if fast5_file is not None:
-        f5_cent = int(len(fast5_sequence) / 2)
-        print("\n\nFAST5 Sequence Summary:\n" +
-              "\tlength:       {}\n".format(len(fast5_sequence)) +
-              "\tpos 0 to 32:  {} ({})\n".format(fast5_sequence[:32], fast5_sequence[:32] in full_reference_sequence) +
-              "\tpos center:   {} ({})\n".format(fast5_sequence[f5_cent-16:f5_cent+16], fast5_sequence[f5_cent-16:f5_cent+16] in full_reference_sequence) +
-              "\tpos -32 to 0: {} ({})\n".format(fast5_sequence[-32:], fast5_sequence[-32:] in full_reference_sequence))
-        fast5_sequence = reverse_complement(fast5_sequence)
-        f5_cent = int(len(fast5_sequence) / 2)
-        print("Reverse Complement FAST5 Sequence Summary:\n" +
-              "\tpos 0 to 32:  {} ({})\n".format(fast5_sequence[:32], fast5_sequence[:32] in full_reference_sequence) +
-              "\tpos center:   {} ({})\n".format(fast5_sequence[f5_cent-16:f5_cent+16], fast5_sequence[f5_cent-16:f5_cent+16] in full_reference_sequence) +
-              "\tpos -32 to 0: {} ({})\n".format(fast5_sequence[-32:], fast5_sequence[-32:] in full_reference_sequence))
+    if print_summary:
+        print("%s:\tlength:%8d\t\tidentity:%8d\t\tratio:%f\n" % (identifier, length, identity, 1.0*identity/length))
+
+    return identity, length
+
 
 
 def discover_single_nucleotide_probabilities(working_folder, kmer_length, reference_map, reference_sequence_string,
@@ -279,14 +273,28 @@ def discover_single_nucleotide_probabilities(working_folder, kmer_length, refere
 
         # read all lines in all files
         output_lines = list()
+        template_count = 0
+        complement_count = 0
         for file in files:
             with open(file, 'r') as input:
                 for line in input:
                     line = line.split("\t")
                     line[0] = int(line[0])
+                    if line[1].lower() == 't':
+                        template_count += 1
+                    elif line[1].lower() == 'c':
+                        complement_count += 1
                     output_lines.append(line)
         # sort based on position
         output_lines.sort(key=lambda x: x[0])
+
+        # template/complement and sanity checks
+        is_template = template_count > complement_count
+        if template_count == 0 and complement_count == 0:
+            print("[warn] {}: could not infer template or complement".format(fast5_id))
+        if template_count != 0 and complement_count != 0:
+            print("[warn] {}: got {} template and {} complement calls after variant calling"
+                  .format(fast5_id, template_count, complement_count))
 
         # write output
         output_filename = "{}.tsv".format(fast5_to_read[fast5_id])
@@ -295,9 +303,13 @@ def discover_single_nucleotide_probabilities(working_folder, kmer_length, refere
             output.write("## fast5_input: {}.fast5\n".format(fast5_id))
             output.write("## read_id: {}\n".format(fast5_to_read[fast5_id]))
             output.write("## contig: {}\n".format(reference_map_contig_name))
+            output.write("## strand: {}\n".format("template" if is_template else "complement"))
             output.write("#CHROM\tPOS\tpA\tpC\tpG\tpT\n".format(reference_map_contig_name))
             for line in output_lines:
-                line = [reference_map_contig_name, str(line[0]), line[2], line[3], line[4], line[5]]
+                if is_template:
+                    line = [reference_map_contig_name, str(line[0]), line[2], line[3], line[4], line[5]]
+                else:
+                    line = [reference_map_contig_name, str(line[0]), line[5], line[4], line[3], line[2]]
                 output.write("\t".join(line) + "\n")
         #save
         output_files.append(output_file)
@@ -317,7 +329,13 @@ def main(args):
 
     # first: see if we want to validate and return
     if args.validation_file is not None:
-        validate_snp_file(args.files_dir, args.validation_file, args.ref)
+        if os.path.isfile(args.validation_file):
+            full_reference_sequence = get_first_sequence(args.ref).upper()
+            validate_snp_file(args.validation_file, full_reference_sequence, print_sequences=True, print_summary=True)
+        elif os.path.isdir(args.validation_file):
+            validate_snp_directory(args.validation_file, args.ref, print_summary=True)
+        else:
+            print("[error] got invalid validation location: {}".format(args.validation_file))
         return 0
 
     # get absolute paths to inputs
@@ -420,10 +438,8 @@ def main(args):
             break
 
     #validation
-    # if len(output_files) != 0:
-    #     import random
-    #     test_file = output_files[random.randrange(0, len(output_files))]
-    #     print("\n[singleNucleotideProbabilities] validating file {}".format(test_file))
+    if len(output_files) != 0:
+        validate_snp_directory(os.path.dirname(output_files[0]), args.ref, print_summary=True)
 
     print("\n\n[singleNucleotideProbabilities] fin\n")
 
