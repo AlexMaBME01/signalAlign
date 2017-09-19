@@ -56,6 +56,8 @@ def parse_args():
                         help="path to BWT files. example: ../ref.fasta")
     parser.add_argument("--kmer_size", action='store', dest="kmer_size", default=5, required=False,
                         help="size of kmers in fast5 file")
+    parser.add_argument("--step_size", action='store', dest="step_size", default=10, required=False,
+                        help="distance between positions of uncertainty")
 
     parser.add_argument("--validate", action='store', dest='validation_file', default=None, required=False,
                         help="validate an output file as compared to its fast5 file (only performs this action)")
@@ -96,7 +98,8 @@ def validate_snp_file(fast5_folder, snp_file, reference_sequence_path):
                 fast5_name = line.split(":")[1].strip()
                 fast5_file = os.path.join(fast5_folder, fast5_name)
                 if not os.path.isfile(fast5_file):
-                    raise Exception("Could not find fast5 file: {}".format(fast5_file))
+                    print("[validation] Could not find fast5 file: {}".format(fast5_file))
+                    fast5_file = None
             elif line.startswith("#"):
                 line = line.split("\t")
                 i = 0
@@ -128,35 +131,23 @@ def validate_snp_file(fast5_folder, snp_file, reference_sequence_path):
     consensus_sequence = "".join(consensus_sequence)
     full_reference_sequence = get_first_sequence(reference_sequence_path)
     reference_sequence = full_reference_sequence[min(first_pos, last_pos):max(first_pos, last_pos)+1]
-    fast5 = NanoporeRead(fast5_file)
-    fast5_sequence = fast5.template_read if len(fast5.template_read) != 0 else fast5.complement_read
+    if fast5_file is not None:
+        fast5 = NanoporeRead(fast5_file)
+        fast5_sequence = fast5.template_read if len(fast5.template_read) != 0 else fast5.complement_read
 
     # sanity check
     if duplicated_positions > 0:
         print("Found {} duplicated positions!\n".format(duplicated_positions))
     # print sequences
     print("\nWhole Sequences:")
-    print("fast5          >{}".format(fast5_sequence))
-    print("consensus      >{}".format(consensus_sequence))
     print("reference      >{}".format(reference_sequence))
+    print("consensus      >{}".format(consensus_sequence))
     print("consensus (RC) >{}".format(reverse_complement(consensus_sequence)))
-    print("fast5 (RC)     >{}".format(reverse_complement(fast5_sequence)))
+    if fast5_file is not None:
+        print("fast5          >{}".format(fast5_sequence))
+        print("fast5 (RC)     >{}".format(reverse_complement(fast5_sequence)))
 
     # summaries
-    f5_cent = int(len(fast5_sequence) / 2)
-    print("\n\nFAST5 Sequence Summary:\n" +
-          "\tlength:       {}\n".format(len(fast5_sequence)) +
-          "\tpos 0 to 32:  {} ({})\n".format(fast5_sequence[:32], fast5_sequence[:32] in full_reference_sequence) +
-          "\tpos center:   {} ({})\n".format(fast5_sequence[f5_cent-16:f5_cent+16], fast5_sequence[f5_cent-16:f5_cent+16] in full_reference_sequence) +
-          "\tpos -32 to 0: {} ({})\n".format(fast5_sequence[-32:], fast5_sequence[-32:] in full_reference_sequence))
-    c_cent = int(len(consensus_sequence) / 2)
-    print("Consensus Sequence Sumamry:\n" +
-          "\tstart_pos:    {}\n".format(first_pos) +
-          "\tend_pos:      {}\n".format(last_pos) +
-          "\tlength:       {}\n".format(len(consensus_sequence)) +
-          "\tpos 0 to 32:  {} ({})\n".format(consensus_sequence[:32], consensus_sequence[:32] in full_reference_sequence) +
-          "\tpos center:   {} ({})\n".format(consensus_sequence[c_cent-16:c_cent+16], consensus_sequence[c_cent-16:c_cent+16] in full_reference_sequence) +
-          "\tpos -32 to 0: {} ({})\n".format(consensus_sequence[-32:],consensus_sequence[-32:] in full_reference_sequence))
     ref_cent = int(len(reference_sequence) / 2)
     print("Reference Sequence Summary:\n" +
           "\ttotal_length: {}\n".format(len(full_reference_sequence)) +
@@ -165,23 +156,38 @@ def validate_snp_file(fast5_folder, snp_file, reference_sequence_path):
           "\tpos center:   {}\n".format(reference_sequence[ref_cent-16:ref_cent+16]) +
           "\tpos -32 to 0: {}\n".format(reference_sequence[-32:]))
 
-    # reverse complement summaries
-    fast5_sequence = reverse_complement(fast5_sequence)
+    c_cent = int(len(consensus_sequence) / 2)
+    print("Consensus Sequence Sumamry:\n" +
+          "\tstart_pos:    {}\n".format(first_pos) +
+          "\tend_pos:      {}\n".format(last_pos) +
+          "\tlength:       {}\n".format(len(consensus_sequence)) +
+          "\tpos 0 to 32:  {} ({})\n".format(consensus_sequence[:32], consensus_sequence[:32] in full_reference_sequence) +
+          "\tpos center:   {} ({})\n".format(consensus_sequence[c_cent-16:c_cent+16], consensus_sequence[c_cent-16:c_cent+16] in full_reference_sequence) +
+          "\tpos -32 to 0: {} ({})\n".format(consensus_sequence[-32:],consensus_sequence[-32:] in full_reference_sequence))
     consensus_sequence = reverse_complement(consensus_sequence)
-    f5_cent = int(len(fast5_sequence) / 2)
-    print("Reverse Complement FAST5 Sequence Summary:\n" +
-          "\tpos 0 to 32:  {} ({})\n".format(fast5_sequence[:32], fast5_sequence[:32] in full_reference_sequence) +
-          "\tpos center:   {} ({})\n".format(fast5_sequence[f5_cent-16:f5_cent+16], fast5_sequence[f5_cent-16:f5_cent+16] in full_reference_sequence) +
-          "\tpos -32 to 0: {} ({})\n".format(fast5_sequence[-32:], fast5_sequence[-32:] in full_reference_sequence))
     c_cent = int(len(consensus_sequence) / 2)
     print("Reverse Complement Consensus Sequence Sumamry:\n" +
           "\tpos 0 to 32:  {} ({})\n".format(consensus_sequence[:32], consensus_sequence[:32] in full_reference_sequence) +
           "\tpos center:   {} ({})\n".format(consensus_sequence[c_cent-16:c_cent+16], consensus_sequence[c_cent-16:c_cent+16] in full_reference_sequence) +
           "\tpos -32 to 0: {} ({})\n".format(consensus_sequence[-32:],consensus_sequence[-32:] in full_reference_sequence))
 
+    if fast5_file is not None:
+        f5_cent = int(len(fast5_sequence) / 2)
+        print("\n\nFAST5 Sequence Summary:\n" +
+              "\tlength:       {}\n".format(len(fast5_sequence)) +
+              "\tpos 0 to 32:  {} ({})\n".format(fast5_sequence[:32], fast5_sequence[:32] in full_reference_sequence) +
+              "\tpos center:   {} ({})\n".format(fast5_sequence[f5_cent-16:f5_cent+16], fast5_sequence[f5_cent-16:f5_cent+16] in full_reference_sequence) +
+              "\tpos -32 to 0: {} ({})\n".format(fast5_sequence[-32:], fast5_sequence[-32:] in full_reference_sequence))
+        fast5_sequence = reverse_complement(fast5_sequence)
+        f5_cent = int(len(fast5_sequence) / 2)
+        print("Reverse Complement FAST5 Sequence Summary:\n" +
+              "\tpos 0 to 32:  {} ({})\n".format(fast5_sequence[:32], fast5_sequence[:32] in full_reference_sequence) +
+              "\tpos center:   {} ({})\n".format(fast5_sequence[f5_cent-16:f5_cent+16], fast5_sequence[f5_cent-16:f5_cent+16] in full_reference_sequence) +
+              "\tpos -32 to 0: {} ({})\n".format(fast5_sequence[-32:], fast5_sequence[-32:] in full_reference_sequence))
+
 
 def discover_single_nucleotide_probabilities(working_folder, kmer_length, reference_map, reference_sequence_string,
-                                             list_of_fast5s, alignment_args, workers, step_size = 10,
+                                             list_of_fast5s, alignment_args, workers, step_size,
                                              output_directory=None, use_saved_alignments=True, save_alignments=True):
     # I'm hacking together the new (improved?) signal align API and the previous version of the api (from when the
     # bonnyDoon script was last working).  The reference map groups by contigs (and is needed by the current SignalAlign
@@ -339,9 +345,10 @@ def main(args):
 #   Template HDP: {tHdp}
 #   Complement HDP: {cHdp}
 #   Kmer size: {kmerSize}
+#   Step size: {stepSize}
     """.format(fileDir=args.files_dir, reference=args.ref, bwt=args.bwt, nbFiles=args.nb_files, banding=args.banded,
                inThmm=args.in_T_Hmm, inChmm=args.in_C_Hmm, model=args.stateMachineType, regions=args.target_regions,
-               tHdp=args.templateHDP, cHdp=args.complementHDP, kmerSize=args.kmer_size)
+               tHdp=args.templateHDP, cHdp=args.complementHDP, kmerSize=args.kmer_size, stepSize=args.step_size)
 
     print(start_message, file=sys.stdout)
     # cull the MinION files
@@ -398,10 +405,15 @@ def main(args):
     print("\n\n[singleNucleotideProbabilities] scanning for proposals with %d fast5s" % len(fast5s))
     output_files = discover_single_nucleotide_probabilities(temp_folder, args.kmer_size, reference_map,
                                                             reference_sequence_string, fast5s, alignment_args,
-                                                            args.nb_jobs, output_directory=args.out)
+                                                            args.nb_jobs, args.step_size, output_directory=args.out)
     print("\n[singleNucleotideProbabilities] got {} output files:".format(len(output_files)))
+    i = 0
     for output_file in output_files:
         print("\t{}".format(output_file))
+        i += 1
+        if i > 10 and len(output_files) > 10:
+            print("\t...")
+            break
 
     #validation
     # if len(output_files) != 0:
