@@ -9,6 +9,7 @@ from variantCallingLib import make_reference_files_and_alignment_args, run_servi
 from serviceCourse.file_handlers import FolderHandler
 from argparse import ArgumentParser
 import glob
+import shutil
 
 
 def parse_args():
@@ -85,23 +86,85 @@ def build_fast5_to_read_id_dict(fast5_locations):
     return fast5_to_read_id
 
 
-def validate_snp_directory(snp_directory, reference_sequence_path, print_summary=False):
+def validate_snp_directory(snp_directory, reference_sequence_path, print_summary=False, rewrite_files=True):
+    # prep
     all_identities = list()
     all_lengths = list()
     all_identity_ratios = list()
     full_reference_sequence = get_first_sequence(reference_sequence_path).upper()
     files = glob.glob(os.path.join(snp_directory, "*.tsv"))
     print("\n[singleNucleotideProbabilities] Validating {} files in {}\n".format(len(files), snp_directory))
+
+    # for rewriting
+    if rewrite_files:
+        rewrite_files = snp_directory[:-1] if snp_directory.endswith("/") else snp_directory
+        rewrite_files += ".improved"
+        if not os.path.isdir(rewrite_files): os.mkdir(rewrite_files)
+        print("[singleNucleotideProbabilities] Rewriting files into {}\n".format(rewrite_files))
+        rewritten_files = 0
+    else:
+        rewrite_files = None
+
+    # look at all files
     for file in files:
-        identity, length = validate_snp_file(file, full_reference_sequence,
-                                             print_sequences=False, print_summary=print_summary)
+        identity, length, problem = validate_snp_file(file, full_reference_sequence,
+                                                      print_sequences=False, print_summary=print_summary)
+        ratio = 1.0 * identity / length
         all_identities.append(identity)
         all_lengths.append(length)
-        all_identity_ratios.append(1.0 * identity / length)
+        all_identity_ratios.append(ratio)
+
+        if rewrite_files is not None:
+            if problem:
+                print("{}: not rewriting problem file".format(os.path.basename(file)))
+                continue
+            # make a new file
+            new_file = os.path.join(rewrite_files, os.path.basename(file))
+            if ratio < .5:
+                rewrite_snp_file(file, new_file)
+                rewritten_files += 1
+                identity, length, _ = validate_snp_file(new_file, full_reference_sequence,
+                                                     print_sequences=False, print_summary=False)
+                ratio = 1.0 * identity / length
+                is_better = ratio > .5
+                print("{}:\trewritten file has {} length, {} identity, and ratio {}:" .format(
+                    os.path.basename(file), length, identity, ratio))
+                if is_better:
+                    print("{}:\trewritten file is acceptable".format( os.path.basename(file)))
+                else:
+                    os.remove(new_file)
+                    print("{}:\trewritten file is still not acceptable.  removed from destination.".format( os.path.basename(file)))
+            else:
+                shutil.copyfile(file, new_file)
+
+    # printing results
     print("\n[singleNucleotideProbabilities] Summary of {} files:".format(len(files)))
     print("\tAVG Identity:       {}".format(np.mean(all_identities)))
     print("\tAVG Length:         {}".format(np.mean(all_lengths)))
     print("\tAVG Identity Ratio: {}".format(np.mean(all_identity_ratios)))
+    print("\tIdentity Ratio:     {}".format(1.0 * sum(all_identities) / sum(all_lengths)))
+    if rewrite_files is not None:
+        print("\n[singleNucleotideProbabilities] rewrote {} ({}%) files.  Rerunning validation."
+              .format(rewritten_files, int(100 * rewritten_files / len(files))))
+        validate_snp_directory(rewrite_files, reference_sequence_path, print_summary=False, rewrite_files=False)
+
+
+
+def rewrite_snp_file(snp_file, output_file_location):
+    with open(snp_file, 'r') as input, open(output_file_location, 'w') as output:
+        for line in input:
+            if line.startswith("#"):
+                output.write(line)
+            else:
+                line = line.strip().split("\t")
+                new_line = list()
+                new_line.append(line[0]) #ch -> cg
+                new_line.append(line[1]) #id -> id
+                new_line.append(line[5]) #pT -> pA
+                new_line.append(line[4]) #pG -> pC
+                new_line.append(line[3]) #pC -> pG
+                new_line.append(line[2]) #pA -> pT
+                output.write("\t".join(new_line) + "\n")
 
 
 def validate_snp_file(snp_file, full_reference_sequence, print_sequences=False, print_summary=False):
@@ -111,7 +174,9 @@ def validate_snp_file(snp_file, full_reference_sequence, print_sequences=False, 
     header_characters = list()
     first_pos = None
     last_pos = None
+    problem = False
     duplicated_positions = 0
+    unspecified_positions = 0
     with open(snp_file, 'r') as snp:
         for line in snp:
             if line.startswith("##"):
@@ -137,6 +202,7 @@ def validate_snp_file(snp_file, full_reference_sequence, print_sequences=False, 
                         continue
                     while last_pos + 1 < pos:
                         consensus_sequence.append("-")
+                        unspecified_positions += 1
                         last_pos += 1
                 last_pos = pos
                 #consensus
@@ -155,10 +221,24 @@ def validate_snp_file(snp_file, full_reference_sequence, print_sequences=False, 
     consensus_sequence = "".join(consensus_sequence)
     reference_sequence = full_reference_sequence[min(first_pos, last_pos):max(first_pos, last_pos)+1]
 
+    # this is our quality metric
+    length = 0
+    identity = 0
+    for c, r in zip(consensus_sequence, reference_sequence):
+        length += 1
+        if c == r: identity += 1
+
+    # for separating results
+    if print_sequences or print_summary: print("")
+
     # sanity check
     if duplicated_positions > 0:
-        print("{}: Found {} duplicated positions!\n"
+        print("{}: Found {} duplicated positions!"
               .format(identifier, duplicated_positions))
+    if unspecified_positions * 100 > length:
+        print("{}: Found {} unspecified positions ({}% of total length)"
+              .format(identifier, unspecified_positions, int(100.0 * unspecified_positions / length)))
+        problem = True
 
     # printing full sequences
     if print_sequences:
@@ -167,16 +247,10 @@ def validate_snp_file(snp_file, full_reference_sequence, print_sequences=False, 
         print("\tconsensus:  {}".format(consensus_sequence))
         print("\tcomplement: {}".format(reverse_complement(consensus_sequence, complement=True, reverse=False)))
 
-    length = 0
-    identity = 0
-    for c, r in zip(consensus_sequence, reference_sequence):
-        length += 1
-        if c == r: identity += 1
-
     if print_summary:
-        print("%s:\tlength:%8d\t\tidentity:%8d\t\tratio:%f\n" % (identifier, length, identity, 1.0*identity/length))
+        print("%s:\tlength:%8d\t\tidentity:%8d\t\tratio:%f" % (identifier, length, identity, 1.0*identity/length))
 
-    return identity, length
+    return identity, length, problem
 
 
 
