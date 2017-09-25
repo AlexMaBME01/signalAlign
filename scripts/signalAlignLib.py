@@ -332,7 +332,7 @@ def exonerated_bwa(bwa_index, query, target_regions=None):
     return completeCigarString, strand
 
 
-def exonerated_bwa_pysam(bwa_index, query, temp_sam_path, target_regions=None):
+def exonerated_bwa_pysam(bwa_index, query, temp_sam_path, target_regions=None, pre_aligned_sam=None):
     # type: (string, string, string, TargetRegions)
     """Aligns the read sequnece with BWA to get the guide alignment,
     returns the CIGAR (in exonerate format), the strand (plus or minus) and the
@@ -340,19 +340,27 @@ def exonerated_bwa_pysam(bwa_index, query, temp_sam_path, target_regions=None):
     is a problem with any of the steps or if the read maps to a region not included
     within TargetRegions
     """
+    #prep (we may skip bwa alignment)
+    sam_location = temp_sam_path
     # align with bwa
-    try:
-        ok = Bwa.align(bwa_index=bwa_index, query=query, output_sam_path=temp_sam_path)
-    except Exception, e:
-        print("[exonerated_bwa_pysam] exception with alignment with index:'{}', query:'{}', output:'{}', error:'{}'"
-              .format(bwa_index, query, temp_sam_path, e))
-        raise e
-    if not ok:
-        print("[exonerated_bwa_pysam] alignment failed with index:'{}', query:'{}', output:'{}'"
-              .format(bwa_index, query, temp_sam_path))
-        return False, False, False
-    print("[exonerated_bwa_pysam]DEBUG: bwa alignment succeeded")
-    sam = pysam.Samfile(temp_sam_path, 'r')
+    if pre_aligned_sam is not None:
+        try:
+            ok = Bwa.align(bwa_index=bwa_index, query=query, output_sam_path=temp_sam_path)
+        except Exception, e:
+            print("[exonerated_bwa_pysam] exception with alignment with index:'{}', query:'{}', output:'{}', error:'{}'"
+                  .format(bwa_index, query, temp_sam_path, e))
+            raise e
+        if not ok:
+            print("[exonerated_bwa_pysam] alignment failed with index:'{}', query:'{}', output:'{}'"
+                  .format(bwa_index, query, temp_sam_path))
+            return False, False, False
+        print("[exonerated_bwa_pysam]DEBUG: bwa alignment succeeded")
+    else:
+        # skip bwa (we have an alignment)
+        sam_location = pre_aligned_sam
+
+    # open sam file and return exonerated data
+    sam = pysam.Samfile(sam_location, 'r')
     n_aligned_segments = 0
     query_name, flag, reference_name, reference_pos, sam_cigar = None, None, None, None, None
 

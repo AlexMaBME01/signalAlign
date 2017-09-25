@@ -34,9 +34,6 @@ def parse_args():
                         help="template serialized HDP file")
     parser.add_argument('--complementHDP', '-cH', action='store', dest='complementHDP', default=None,
                         help="complement serialized HDP file")
-    parser.add_argument('--degenerate', '-x', action='store', dest='degenerate', default="variant",
-                        help="Specify degenerate nucleotide options: "
-                             "variant -> {ACGT}, twoWay -> {CE} threeWay -> {CEO}")
     parser.add_argument('--stateMachineType', '-smt', action='store', dest='stateMachineType', type=str,
                         default="threeState", help="decide which model to use, threeState by default")
     parser.add_argument('--threshold', '-t', action='store', dest='threshold', type=float, required=False,
@@ -106,6 +103,11 @@ def validate_snp_directory(snp_directory, reference_sequence_path, print_summary
         rewrite_files = None
 
     # look at all files
+    orig_cnt = 0
+    prob_cnt = 0
+    rewr_cnt = 0
+    norw_cnt = 0
+
     for file in files:
         identity, length, problem = validate_snp_file(file, full_reference_sequence,
                                                       print_sequences=False, print_summary=print_summary)
@@ -117,6 +119,7 @@ def validate_snp_directory(snp_directory, reference_sequence_path, print_summary
         if rewrite_files is not None:
             if problem:
                 print("{}: not rewriting problem file".format(os.path.basename(file)))
+                prob_cnt += 1
                 continue
             # make a new file
             new_file = os.path.join(rewrite_files, os.path.basename(file))
@@ -130,12 +133,15 @@ def validate_snp_directory(snp_directory, reference_sequence_path, print_summary
                 print("{}:\trewritten file has {} length, {} identity, and ratio {}:" .format(
                     os.path.basename(file), length, identity, ratio))
                 if is_better:
+                    rewr_cnt += 1
                     print("{}:\trewritten file is acceptable".format( os.path.basename(file)))
                 else:
                     os.remove(new_file)
+                    norw_cnt += 1
                     print("{}:\trewritten file is still not acceptable.  removed from destination.".format( os.path.basename(file)))
             else:
                 shutil.copyfile(file, new_file)
+                orig_cnt += 1
 
     # printing results
     print("\n[singleNucleotideProbabilities] Summary of {} files:".format(len(files)))
@@ -144,6 +150,12 @@ def validate_snp_directory(snp_directory, reference_sequence_path, print_summary
     print("\tAVG Identity Ratio: {}".format(np.mean(all_identity_ratios)))
     print("\tIdentity Ratio:     {}".format(1.0 * sum(all_identities) / sum(all_lengths)))
     if rewrite_files is not None:
+        total_cnt = orig_cnt + prob_cnt + rewr_cnt + norw_cnt
+        print("[singleNucleotideProbabilities] Summary of rewriting:")
+        print("\tIncl - Original:    {} ({}%)".format(orig_cnt, int(100 * orig_cnt / total_cnt)))
+        print("\tIncl - Rewritten:   {} ({}%)".format(rewr_cnt, int(100 * rewr_cnt / total_cnt)))
+        print("\tRem  - SNP Prob:    {} ({}%)".format(prob_cnt, int(100 * prob_cnt / total_cnt)))
+        print("\tRem  - Bad Reverse: {} ({}%)".format(norw_cnt, int(100 * norw_cnt / total_cnt)))
         print("\n[singleNucleotideProbabilities] rewrote {} ({}%) files.  Rerunning validation."
               .format(rewritten_files, int(100 * rewritten_files / len(files))))
         validate_snp_directory(rewrite_files, reference_sequence_path, print_summary=False, rewrite_files=False)
@@ -350,25 +362,28 @@ def discover_single_nucleotide_probabilities(working_folder, kmer_length, refere
         template_count = 0
         complement_count = 0
         for file in files:
+            if "forward" in file.split("."):
+                template_count += 1
+            if "backward" in file.split("."):
+                complement_count += 1
             with open(file, 'r') as input:
                 for line in input:
                     line = line.split("\t")
                     line[0] = int(line[0])
-                    if line[1].lower() == 't':
-                        template_count += 1
-                    elif line[1].lower() == 'c':
-                        complement_count += 1
                     output_lines.append(line)
         # sort based on position
         output_lines.sort(key=lambda x: x[0])
 
         # template/complement and sanity checks
-        is_template = template_count > complement_count
+        reverse = complement_count > template_count
+        strand_identifier = "complement" if reverse else "template"
         if template_count == 0 and complement_count == 0:
             print("[warn] {}: could not infer template or complement".format(fast5_id))
+            strand_identifier = "unknown"
         if template_count != 0 and complement_count != 0:
             print("[warn] {}: got {} template and {} complement calls after variant calling"
                   .format(fast5_id, template_count, complement_count))
+            strand_identifier += " (by majority)"
 
         # write output
         output_filename = "{}.tsv".format(fast5_to_read[fast5_id])
@@ -377,10 +392,10 @@ def discover_single_nucleotide_probabilities(working_folder, kmer_length, refere
             output.write("## fast5_input: {}.fast5\n".format(fast5_id))
             output.write("## read_id: {}\n".format(fast5_to_read[fast5_id]))
             output.write("## contig: {}\n".format(reference_map_contig_name))
-            output.write("## strand: {}\n".format("template" if is_template else "complement"))
+            output.write("## strand: {}\n".format(strand_identifier))
             output.write("#CHROM\tPOS\tpA\tpC\tpG\tpT\n".format(reference_map_contig_name))
             for line in output_lines:
-                if is_template:
+                if reverse:
                     line = [reference_map_contig_name, str(line[0]), line[2], line[3], line[4], line[5]]
                 else:
                     line = [reference_map_contig_name, str(line[0]), line[5], line[4], line[3], line[2]]
@@ -492,7 +507,7 @@ def main(args):
         "diagonal_expansion": args.diag_expansion,
         "constraint_trim": args.constraint_trim,
         "target_regions": None,
-        "degenerate": degenerate_enum(args.degenerate),
+        "degenerate": degenerate_enum("variant"),
         "remove_temp_folder": False
     }
     #TODO you could save alignments by altering the above "destination" parameter
