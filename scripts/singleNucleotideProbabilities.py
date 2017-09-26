@@ -395,7 +395,7 @@ def discover_single_nucleotide_probabilities(working_folder, kmer_length, refere
             output.write("## strand: {}\n".format(strand_identifier))
             output.write("#CHROM\tPOS\tpA\tpC\tpG\tpT\n".format(reference_map_contig_name))
             for line in output_lines:
-                if reverse:
+                if not reverse:
                     line = [reference_map_contig_name, str(line[0]), line[2], line[3], line[4], line[5]]
                 else:
                     line = [reference_map_contig_name, str(line[0]), line[5], line[4], line[3], line[2]]
