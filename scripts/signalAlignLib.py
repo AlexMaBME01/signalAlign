@@ -343,7 +343,7 @@ def exonerated_bwa_pysam(bwa_index, query, temp_sam_path, target_regions=None, p
     #prep (we may skip bwa alignment)
     sam_location = temp_sam_path
     # align with bwa
-    if pre_aligned_sam is not None:
+    if pre_aligned_sam is None:
         try:
             ok = Bwa.align(bwa_index=bwa_index, query=query, output_sam_path=temp_sam_path)
         except Exception, e:
