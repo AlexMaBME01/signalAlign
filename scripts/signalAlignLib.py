@@ -1148,7 +1148,8 @@ class SignalAlignment(object):
                  twoD_chemistry=False,
                  target_regions=None,
                  output_format="full",
-                 remove_temp_folder=True):
+                 remove_temp_folder=True,
+                 sam_location=None):
         self.in_fast5           = in_fast5            # fast5 file to align
         self.reference_map      = reference_map       # map with paths to reference sequences
         self.path_to_EC_refs    = path_to_EC_refs     # place where the reference sequence with ambiguous characters is
@@ -1162,7 +1163,8 @@ class SignalAlignment(object):
         self.output_format      = output_format       # smaller output files
         self.degenerate         = degenerate          # set of nucleotides for degenerate characters
         self.twoD_chemistry     = twoD_chemistry      # flag for 2D sequencing runs
-        self.remove_temp_folder = remove_temp_folder
+        self.remove_temp_folder = remove_temp_folder  # for debugging
+        self.sam_location       = sam_location        # will use this sam's cigar for alignment (if set)
 
         # if we're using an input hmm, make sure it exists
         if (in_templateHmm is not None) and os.path.isfile(in_templateHmm):
@@ -1211,6 +1213,7 @@ class SignalAlignment(object):
         temp_samfile = temp_folder.add_file_path("temp_sam_file_{read}.sam".format(read=read_label))
         cigar_file   = temp_folder.add_file_path("temp_cigar_{read}.txt".format(read=read_label))
 
+        #todo how to handle input sam file with these?  validate that the reads match I think?
         # make the npRead and fasta
         if not self.twoD_chemistry:
             ok, version, pop_1 = prepareOneD(fast5=self.in_fast5, npRead_path=temp_npRead, oneD_read_path=read_fasta)
@@ -1246,7 +1249,8 @@ class SignalAlignment(object):
         cigar_string, strand, mapped_refernce = exonerated_bwa_pysam(bwa_index=self.bwa_index,
                                                                      query=read_fasta,
                                                                      temp_sam_path=temp_samfile,
-                                                                     target_regions=self.target_regions)
+                                                                     target_regions=self.target_regions,
+                                                                     pre_aligned_sam=self.sam_location)
         cig_handle = open(cigar_file, "w")
         cig_handle.write(cigar_string + "\n")
         cig_handle.close()

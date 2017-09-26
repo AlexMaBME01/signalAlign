@@ -138,6 +138,7 @@ def validate_snp_directory(snp_directory, reference_sequence_path, print_summary
                 else:
                     os.remove(new_file)
                     norw_cnt += 1
+                    rewritten_files -= 1
                     print("{}:\trewritten file is still not acceptable.  removed from destination.".format( os.path.basename(file)))
             else:
                 shutil.copyfile(file, new_file)
