@@ -56,6 +56,8 @@ def parse_args():
                         help="size of kmers in fast5 file")
     parser.add_argument("--step_size", action='store', dest="step_size", default=10, required=False,
                         help="distance between positions of uncertainty")
+    parser.add_argument("--alignment_sam", action='store', dest="alignment_sam", default=None, required=False,
+                        help="a SAM with alignments of reads.  if set, cigar strings will be used only from this file")
 
     parser.add_argument("--validate", action='store', dest='validation_file', default=None, required=False,
                         help="validate an output file as compared to its fast5 file (only performs this action)")
@@ -438,6 +440,7 @@ def main(args):
     args.templateHDP         = resolvePath(args.templateHDP)
     args.complementHDP       = resolvePath(args.complementHDP)
     args.target_regions      = resolvePath(args.target_regions)
+    args.alignment_sam       = resolvePath(args.alignment_sam)
 
     # assert integers
     args.step_size = int(args.step_size)
@@ -458,9 +461,11 @@ def main(args):
 #   Complement HDP: {cHdp}
 #   Kmer size: {kmerSize}
 #   Step size: {stepSize}
+#   Alignment SAM: {alignmentSam}
     """.format(fileDir=args.files_dir, reference=args.ref, bwt=args.bwt, nbFiles=args.nb_files, banding=args.banded,
                inThmm=args.in_T_Hmm, inChmm=args.in_C_Hmm, model=args.stateMachineType, regions=args.target_regions,
-               tHdp=args.templateHDP, cHdp=args.complementHDP, kmerSize=args.kmer_size, stepSize=args.step_size)
+               tHdp=args.templateHDP, cHdp=args.complementHDP, kmerSize=args.kmer_size, stepSize=args.step_size,
+               alignmentSam=args.alignment_sam)
 
     print(start_message, file=sys.stdout)
     # cull the MinION files

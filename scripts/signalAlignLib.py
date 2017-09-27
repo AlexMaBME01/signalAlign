@@ -355,10 +355,11 @@ def exonerated_bwa_pysam(bwa_index, query, temp_sam_path, target_regions=None,
             print("[exonerated_bwa_pysam] alignment failed with index:'{}', query:'{}', output:'{}'"
                   .format(bwa_index, query, temp_sam_path))
             return False, False, False
-        print("[exonerated_bwa_pysam]DEBUG: bwa alignment succeeded")
+        print("[exonerated_bwa_pysam] DEBUG: bwa alignment succeeded")
     else:
         # skip bwa (we have an alignment)
         sam_location = pre_aligned_sam
+        print("[exonerated_bwa_pysam] DEBUG: bwa alignment skipped (querying {})".format(pre_aligned_sam))
 
     # open sam file and return exonerated data
     sam = pysam.Samfile(sam_location, 'r')
@@ -368,10 +369,11 @@ def exonerated_bwa_pysam(bwa_index, query, temp_sam_path, target_regions=None,
     for aligned_segment in sam:
         if not aligned_segment.is_secondary and not aligned_segment.is_unmapped:
             # this indicates that we've passed in a sam and want to pick our read from it
-            if read_name is not None and aligned_segment.rname != read_name:
+            if read_name is not None and aligned_segment.qname != read_name:
                 continue
 
-            if n_aligned_segments == 0:
+            n_aligned_segments += 1
+            if n_aligned_segments == 1:
                 query_name     = aligned_segment.qname
                 flag           = aligned_segment.flag
                 reference_name = sam.getrname(aligned_segment.rname)
@@ -380,20 +382,20 @@ def exonerated_bwa_pysam(bwa_index, query, temp_sam_path, target_regions=None,
                 # if we're looking through a large sam file, no need to report on the number of alignments
                 if read_name is not None:
                     break
-            n_aligned_segments += 1
 
     if n_aligned_segments == 0:
-        print("[exonerated_bwa_pysam]Read has no aligned segments")
+        print("[exonerated_bwa_pysam] Read has no aligned segments" + ("" if read_name is None else
+                                                                       " for read {}".format(read_name)))
         return False, False, False
 
     if sam_cigar is None:
-        print("[exonerated_bwa_pysam]DEBUG: query name: {qn} flag {fl} reference name {rn} "
+        print("[exonerated_bwa_pysam] DEBUG: query name: {qn} flag {fl} reference name {rn} "
               "reference pos {rp} sam cigar {cig} n_aligned {nal}"
               "".format(qn=query_name, fl=flag, rn=reference_name, rp=reference_pos, cig=sam_cigar,
                         nal=n_aligned_segments))
 
     if n_aligned_segments > 1:
-        print("[exonerated_bwa_pysam]WARNING more than 1 mapping, taking the first one heuristically")
+        print("[exonerated_bwa_pysam] WARNING more than 1 mapping, taking the first one heuristically")
 
     query_start, query_end, reference_start, reference_end, cigar_string = parse_cigar(sam_cigar, reference_pos)
 
@@ -408,7 +410,7 @@ def exonerated_bwa_pysam(bwa_index, query, temp_sam_path, target_regions=None,
     if int(flag) == 0:
         strand = "+"
     elif int(flag) != 0 and int(flag) != 16:
-        print("[exonerated_bwa_pysam]ERROR unexpected alignment flag {flag}, not continuing with signal alignment"
+        print("[exonerated_bwa_pysam] ERROR unexpected alignment flag {flag}, not continuing with signal alignment"
               " for {query}".format(flag=flag, query=query_name), file=sys.stderr)
         return False, False, False
 
@@ -421,7 +423,7 @@ def exonerated_bwa_pysam(bwa_index, query, temp_sam_path, target_regions=None,
     if target_regions is not None:
         keep = target_regions.check_aligned_region(reference_start, reference_end)
         if keep is False:
-            print("[exonerated_bwa_pysam]Read does not map witin the target regions, passing "
+            print("[exonerated_bwa_pysam] Read does not map witin the target regions, passing "
                   "on signal-level alignment", file=sys.stderr)
             return False, False, False
         else:
@@ -1157,7 +1159,7 @@ class SignalAlignment(object):
                  target_regions=None,
                  output_format="full",
                  remove_temp_folder=True,
-                 sam_location=None):
+                 alignment_sam_location=None):
         self.in_fast5           = in_fast5            # fast5 file to align
         self.reference_map      = reference_map       # map with paths to reference sequences
         self.path_to_EC_refs    = path_to_EC_refs     # place where the reference sequence with ambiguous characters is
@@ -1172,7 +1174,7 @@ class SignalAlignment(object):
         self.degenerate         = degenerate          # set of nucleotides for degenerate characters
         self.twoD_chemistry     = twoD_chemistry      # flag for 2D sequencing runs
         self.remove_temp_folder = remove_temp_folder  # for debugging
-        self.sam_location       = sam_location        # will use this sam's cigar for alignment (if set)
+        self.alignment_sam_location = alignment_sam_location # will use this sam's cigar for alignment (if set)
 
         # if we're using an input hmm, make sure it exists
         if (in_templateHmm is not None) and os.path.isfile(in_templateHmm):
@@ -1258,9 +1260,13 @@ class SignalAlignment(object):
                                                                      query=read_fasta,
                                                                      temp_sam_path=temp_samfile,
                                                                      target_regions=self.target_regions,
-                                                                     read_name=(None if self.sam_location is None else
-                                                                                NanoporeRead(self.in_fast5).read_label),
-                                                                     pre_aligned_sam=self.sam_location)
+                                                                     read_name=
+                                                                        (None if self.alignment_sam_location is None
+                                                                         else NanoporeRead(self.in_fast5).read_label),
+                                                                     pre_aligned_sam=self.alignment_sam_location)
+        if cigar_string == False: # failed to align
+            return False
+
         cig_handle = open(cigar_file, "w")
         cig_handle.write(cigar_string + "\n")
         cig_handle.close()
