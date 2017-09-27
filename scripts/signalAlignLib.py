@@ -332,7 +332,8 @@ def exonerated_bwa(bwa_index, query, target_regions=None):
     return completeCigarString, strand
 
 
-def exonerated_bwa_pysam(bwa_index, query, temp_sam_path, target_regions=None, pre_aligned_sam=None):
+def exonerated_bwa_pysam(bwa_index, query, temp_sam_path, target_regions=None,
+                         read_name=None, pre_aligned_sam=None):
     # type: (string, string, string, TargetRegions)
     """Aligns the read sequnece with BWA to get the guide alignment,
     returns the CIGAR (in exonerate format), the strand (plus or minus) and the
@@ -366,12 +367,19 @@ def exonerated_bwa_pysam(bwa_index, query, temp_sam_path, target_regions=None, p
 
     for aligned_segment in sam:
         if not aligned_segment.is_secondary and not aligned_segment.is_unmapped:
+            # this indicates that we've passed in a sam and want to pick our read from it
+            if read_name is not None and aligned_segment.rname != read_name:
+                continue
+
             if n_aligned_segments == 0:
                 query_name     = aligned_segment.qname
                 flag           = aligned_segment.flag
                 reference_name = sam.getrname(aligned_segment.rname)
                 reference_pos  = aligned_segment.pos + 1  # pysam gives the 0-based leftmost start
                 sam_cigar      = aligned_segment.cigarstring
+                # if we're looking through a large sam file, no need to report on the number of alignments
+                if read_name is not None:
+                    break
             n_aligned_segments += 1
 
     if n_aligned_segments == 0:
@@ -1250,6 +1258,8 @@ class SignalAlignment(object):
                                                                      query=read_fasta,
                                                                      temp_sam_path=temp_samfile,
                                                                      target_regions=self.target_regions,
+                                                                     read_name=(None if self.sam_location is None else
+                                                                                NanoporeRead(self.in_fast5).read_label),
                                                                      pre_aligned_sam=self.sam_location)
         cig_handle = open(cigar_file, "w")
         cig_handle.write(cigar_string + "\n")
