@@ -564,6 +564,7 @@ class Bwa(object):
 
 
 class NanoporeRead(object):
+    VALID_VERSIONS = ["1.23.0", "1.22.4"]
     def __init__(self, fast_five_file, twoD=False):
         # load the fast5
         self.filename = fast_five_file
@@ -622,7 +623,7 @@ class NanoporeRead(object):
         highest_1d_basecall = self.get_latest_basecall_edition("/Analyses/Basecall_1D_00{}")
         oneD_root_address = "/Analyses/Basecall_1D_00{}".format(highest_1d_basecall)
         self.version = self.fastFive[oneD_root_address].attrs["dragonet version"]
-        assert(self.version == "1.23.0"), "Unsupported version {}".format(self.version)
+        assert(self.version not in NanoporeRead.VALID_VERSIONS), "Unsupported version {}".format(self.version)
         self.template_event_table_address = oneD_root_address + '/BaseCalled_template/Events'
         self.template_model_address = oneD_root_address + "/BaseCalled_template/Model"
         self.template_model_id = self.get_model_id(oneD_root_address + "/Summary/basecall_1d_template")
