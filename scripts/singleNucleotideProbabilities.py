@@ -102,7 +102,7 @@ def validate_snp_directory(snp_directory, reference_sequence_path,
     # for rewriting
     if move_files:
         new_file_destination = snp_directory[:-1] if snp_directory.endswith("/") else snp_directory
-        new_file_destination += ".improved" if not attempt_reversal else ".filtered"
+        new_file_destination += ".improved" if attempt_reversal else ".filtered"
         if not os.path.isdir(new_file_destination): os.mkdir(new_file_destination)
         print("[singleNucleotideProbabilities] Copying files into {}\n".format(new_file_destination))
         rewritten_files = 0
@@ -123,7 +123,7 @@ def validate_snp_directory(snp_directory, reference_sequence_path,
         all_lengths.append(length)
         all_identity_ratios.append(ratio)
 
-        if move_files is not None:
+        if move_files:
             if problem:
                 print("{}: not rewriting problem file".format(os.path.basename(file)))
                 prob_cnt += 1
@@ -152,6 +152,7 @@ def validate_snp_directory(snp_directory, reference_sequence_path,
                 else:
                     print("{}:\tfile identity ratio is below threshold {}".format(
                         os.path.basename(file), VALID_IDENTITY_RATIO))
+                    norw_cnt += 1
             else:
                 shutil.copyfile(file, new_file)
                 orig_cnt += 1
@@ -165,13 +166,14 @@ def validate_snp_directory(snp_directory, reference_sequence_path,
     if new_file_destination is not None:
         total_cnt = orig_cnt + prob_cnt + rewr_cnt + norw_cnt
         print("[singleNucleotideProbabilities] Summary of rewriting:")
-        print("\tIncl - Original:    {} ({}%)".format(orig_cnt, int(100 * orig_cnt / total_cnt)))
-        print("\tIncl - Rewritten:   {} ({}%)".format(rewr_cnt, int(100 * rewr_cnt / total_cnt)))
-        print("\tRem  - SNP Prob:    {} ({}%)".format(prob_cnt, int(100 * prob_cnt / total_cnt)))
-        print("\tRem  - Bad Reverse: {} ({}%)".format(norw_cnt, int(100 * norw_cnt / total_cnt)))
+        print("\tIncl - Original:        {} ({}%)".format(orig_cnt, int(100 * orig_cnt / total_cnt)))
+        if attempt_reversal:
+            print("\tIncl - Rewritten:       {} ({}%)".format(rewr_cnt, int(100 * rewr_cnt / total_cnt)))
+        print("\tRem  - SNP Prob:        {} ({}%)".format(prob_cnt, int(100 * prob_cnt / total_cnt)))
+        print("\tRem  - Below Threshold: {} ({}%)".format(norw_cnt, int(100 * norw_cnt / total_cnt)))
         print("\n[singleNucleotideProbabilities] rewrote {} ({}%) files.  Rerunning validation."
               .format(rewritten_files, int(100 * rewritten_files / len(files))))
-        validate_snp_directory(new_file_destination, reference_sequence_path, print_summary=False, new_file_destination=False)
+        validate_snp_directory(new_file_destination, reference_sequence_path, print_summary=False, move_files=False)
 
 
 
