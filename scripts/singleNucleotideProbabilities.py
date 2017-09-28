@@ -84,25 +84,30 @@ def build_fast5_to_read_id_dict(fast5_locations):
         fast5_to_read_id[fast5_id] = read_id
     return fast5_to_read_id
 
-
-def validate_snp_directory(snp_directory, reference_sequence_path, print_summary=False, rewrite_files=True):
+VALID_IDENTITY_RATIO = .85
+def validate_snp_directory(snp_directory, reference_sequence_path,
+                           print_summary=False, move_files=True, attempt_reversal=False):
     # prep
     all_identities = list()
     all_lengths = list()
     all_identity_ratios = list()
     full_reference_sequence = get_first_sequence(reference_sequence_path).upper()
     files = glob.glob(os.path.join(snp_directory, "*.tsv"))
+    if len(files) == 0:
+        print("\n[singleNucleotideProbabilities] No files in {}\n".format(len(files), snp_directory))
+        return
+
     print("\n[singleNucleotideProbabilities] Validating {} files in {}\n".format(len(files), snp_directory))
 
     # for rewriting
-    if rewrite_files:
-        rewrite_files = snp_directory[:-1] if snp_directory.endswith("/") else snp_directory
-        rewrite_files += ".improved"
-        if not os.path.isdir(rewrite_files): os.mkdir(rewrite_files)
-        print("[singleNucleotideProbabilities] Rewriting files into {}\n".format(rewrite_files))
+    if move_files:
+        new_file_destination = snp_directory[:-1] if snp_directory.endswith("/") else snp_directory
+        new_file_destination += ".improved" if not attempt_reversal else ".filtered"
+        if not os.path.isdir(new_file_destination): os.mkdir(new_file_destination)
+        print("[singleNucleotideProbabilities] Copying files into {}\n".format(new_file_destination))
         rewritten_files = 0
     else:
-        rewrite_files = None
+        new_file_destination = None
 
     # look at all files
     orig_cnt = 0
@@ -118,30 +123,35 @@ def validate_snp_directory(snp_directory, reference_sequence_path, print_summary
         all_lengths.append(length)
         all_identity_ratios.append(ratio)
 
-        if rewrite_files is not None:
+        if move_files is not None:
             if problem:
                 print("{}: not rewriting problem file".format(os.path.basename(file)))
                 prob_cnt += 1
                 continue
             # make a new file
-            new_file = os.path.join(rewrite_files, os.path.basename(file))
-            if ratio < .5:
-                rewrite_snp_file(file, new_file)
-                rewritten_files += 1
-                identity, length, _ = validate_snp_file(new_file, full_reference_sequence,
-                                                     print_sequences=False, print_summary=False)
-                ratio = 1.0 * identity / length
-                is_better = ratio > .5
-                print("{}:\trewritten file has {} length, {} identity, and ratio {}:" .format(
-                    os.path.basename(file), length, identity, ratio))
-                if is_better:
-                    rewr_cnt += 1
-                    print("{}:\trewritten file is acceptable".format( os.path.basename(file)))
+            new_file = os.path.join(new_file_destination, os.path.basename(file))
+            if ratio < VALID_IDENTITY_RATIO:
+                if attempt_reversal:
+                    rewrite_snp_file(file, new_file)
+                    rewritten_files += 1
+                    identity, length, _ = validate_snp_file(new_file, full_reference_sequence,
+                                                         print_sequences=False, print_summary=False)
+                    ratio = 1.0 * identity / length
+                    is_better = ratio >= VALID_IDENTITY_RATIO
+                    print("{}:\trewritten file has {} length, {} identity, and ratio {}:" .format(
+                        os.path.basename(file), length, identity, ratio))
+                    if is_better:
+                        rewr_cnt += 1
+                        print("{}:\trewritten file is acceptable".format( os.path.basename(file)))
+                    else:
+                        os.remove(new_file)
+                        norw_cnt += 1
+                        rewritten_files -= 1
+                        print("{}:\trewritten file is still not acceptable.  removed from destination.".format(
+                            os.path.basename(file)))
                 else:
-                    os.remove(new_file)
-                    norw_cnt += 1
-                    rewritten_files -= 1
-                    print("{}:\trewritten file is still not acceptable.  removed from destination.".format( os.path.basename(file)))
+                    print("{}:\tfile identity ratio is below threshold {}".format(
+                        os.path.basename(file), VALID_IDENTITY_RATIO))
             else:
                 shutil.copyfile(file, new_file)
                 orig_cnt += 1
@@ -152,7 +162,7 @@ def validate_snp_directory(snp_directory, reference_sequence_path, print_summary
     print("\tAVG Length:         {}".format(np.mean(all_lengths)))
     print("\tAVG Identity Ratio: {}".format(np.mean(all_identity_ratios)))
     print("\tIdentity Ratio:     {}".format(1.0 * sum(all_identities) / sum(all_lengths)))
-    if rewrite_files is not None:
+    if new_file_destination is not None:
         total_cnt = orig_cnt + prob_cnt + rewr_cnt + norw_cnt
         print("[singleNucleotideProbabilities] Summary of rewriting:")
         print("\tIncl - Original:    {} ({}%)".format(orig_cnt, int(100 * orig_cnt / total_cnt)))
@@ -161,7 +171,7 @@ def validate_snp_directory(snp_directory, reference_sequence_path, print_summary
         print("\tRem  - Bad Reverse: {} ({}%)".format(norw_cnt, int(100 * norw_cnt / total_cnt)))
         print("\n[singleNucleotideProbabilities] rewrote {} ({}%) files.  Rerunning validation."
               .format(rewritten_files, int(100 * rewritten_files / len(files))))
-        validate_snp_directory(rewrite_files, reference_sequence_path, print_summary=False, rewrite_files=False)
+        validate_snp_directory(new_file_destination, reference_sequence_path, print_summary=False, new_file_destination=False)
 
 
 
@@ -514,7 +524,8 @@ def main(args):
         "constraint_trim": args.constraint_trim,
         "target_regions": None,
         "degenerate": degenerate_enum("variant"),
-        "remove_temp_folder": False
+        "remove_temp_folder": False,
+        "alignment_sam_location": args.alignment_sam
     }
     #TODO you could save alignments by altering the above "destination" parameter
 
