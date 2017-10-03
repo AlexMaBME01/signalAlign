@@ -7,3 +7,4 @@ externalTools/lastz-distrib-1.03.54/src/lastz_D
 *.pyc
 .idea
 scripts/serviceCourse
+cmake-build-debug/
