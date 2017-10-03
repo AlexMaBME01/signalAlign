@@ -3,6 +3,7 @@
 // File: lastz.c
 //
 //----------
+#include "version.h"
 
 char* programName            = "lastz";
 char* programVersionMajor    = VERSION_MAJOR;

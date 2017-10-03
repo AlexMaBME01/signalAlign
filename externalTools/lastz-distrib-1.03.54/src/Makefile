@@ -1,5 +1,5 @@
 include ../make-include.mak
-include version.mak
+#include version.mak
 
 CC=gcc
 
