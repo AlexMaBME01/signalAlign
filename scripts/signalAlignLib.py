@@ -341,10 +341,49 @@ def exonerated_bwa_pysam(bwa_index, query, temp_sam_path, target_regions=None,
     is a problem with any of the steps or if the read maps to a region not included
     within TargetRegions
     """
+
+    def get_cigar_data_from_sam(sam_location, read_name = None):
+        sam = pysam.Samfile(sam_location, 'r')
+        n_aligned_segments = 0
+        query_name, flag, reference_name, reference_pos, sam_cigar = None, None, None, None, None
+
+        for aligned_segment in sam:
+            if not aligned_segment.is_secondary and not aligned_segment.is_unmapped:
+                # this indicates that we've passed in a sam and want to pick our read from it
+                if read_name is not None and aligned_segment.qname != read_name:
+                    continue
+
+                n_aligned_segments += 1
+                if n_aligned_segments == 1:
+                    query_name     = aligned_segment.qname
+                    flag           = aligned_segment.flag
+                    reference_name = sam.getrname(aligned_segment.rname)
+                    reference_pos  = aligned_segment.pos + 1  # pysam gives the 0-based leftmost start
+                    sam_cigar      = aligned_segment.cigarstring
+                    # if we're looking through a large sam file, no need to report on the number of alignments
+                    if read_name is not None:
+                        break
+
+        if n_aligned_segments == 0:
+            print("[exonerated_bwa_pysam] Read has no aligned segments" + ("" if read_name is None else
+                                                                           " for read {}".format(
+                                                                               read_name)))
+        if n_aligned_segments > 1:
+            print("[exonerated_bwa_pysam] WARNING more than 1 mapping, taking the first one heuristically")
+        return query_name, flag, reference_name, reference_pos, sam_cigar
+
+
     #prep (we may skip bwa alignment)
+    query_name, flag, reference_name, reference_pos, sam_cigar = None, None, None, None, None
     sam_location = temp_sam_path
-    # align with bwa
-    if pre_aligned_sam is None:
+
+    # try finding in sam (if appropriate)
+    if pre_aligned_sam is not None:
+        print("[exonerated_bwa_pysam] DEBUG: bwa alignment skipped (querying {})".format(pre_aligned_sam))
+        query_name, flag, reference_name, reference_pos, sam_cigar = get_cigar_data_from_sam(pre_aligned_sam, read_name)
+
+    # try align with bwa (either we couldn't find it in the bam or didn't try)
+    if sam_cigar is None:
         try:
             ok = Bwa.align(bwa_index=bwa_index, query=query, output_sam_path=temp_sam_path)
         except Exception, e:
@@ -356,46 +395,14 @@ def exonerated_bwa_pysam(bwa_index, query, temp_sam_path, target_regions=None,
                   .format(bwa_index, query, temp_sam_path))
             return False, False, False
         print("[exonerated_bwa_pysam] DEBUG: bwa alignment succeeded")
-    else:
-        # skip bwa (we have an alignment)
-        sam_location = pre_aligned_sam
-        print("[exonerated_bwa_pysam] DEBUG: bwa alignment skipped (querying {})".format(pre_aligned_sam))
+        query_name, flag, reference_name, reference_pos, sam_cigar = get_cigar_data_from_sam(temp_sam_path)
 
-    # open sam file and return exonerated data
-    sam = pysam.Samfile(sam_location, 'r')
-    n_aligned_segments = 0
-    query_name, flag, reference_name, reference_pos, sam_cigar = None, None, None, None, None
-
-    for aligned_segment in sam:
-        if not aligned_segment.is_secondary and not aligned_segment.is_unmapped:
-            # this indicates that we've passed in a sam and want to pick our read from it
-            if read_name is not None and aligned_segment.qname != read_name:
-                continue
-
-            n_aligned_segments += 1
-            if n_aligned_segments == 1:
-                query_name     = aligned_segment.qname
-                flag           = aligned_segment.flag
-                reference_name = sam.getrname(aligned_segment.rname)
-                reference_pos  = aligned_segment.pos + 1  # pysam gives the 0-based leftmost start
-                sam_cigar      = aligned_segment.cigarstring
-                # if we're looking through a large sam file, no need to report on the number of alignments
-                if read_name is not None:
-                    break
-
-    if n_aligned_segments == 0:
-        print("[exonerated_bwa_pysam] Read has no aligned segments" + ("" if read_name is None else
-                                                                       " for read {}".format(read_name)))
-        return False, False, False
-
+    # if alignment totally failed
     if sam_cigar is None:
-        print("[exonerated_bwa_pysam] DEBUG: query name: {qn} flag {fl} reference name {rn} "
-              "reference pos {rp} sam cigar {cig} n_aligned {nal}"
-              "".format(qn=query_name, fl=flag, rn=reference_name, rp=reference_pos, cig=sam_cigar,
-                        nal=n_aligned_segments))
-
-    if n_aligned_segments > 1:
-        print("[exonerated_bwa_pysam] WARNING more than 1 mapping, taking the first one heuristically")
+        print("[exonerated_bwa_pysam] DEBUG: alignment failed query name: {qn} flag {fl} reference name {rn} "
+              "reference pos {rp} sam cigar {cig} "
+              "".format(qn=query_name, fl=flag, rn=reference_name, rp=reference_pos, cig=sam_cigar))
+        return False, False, False
 
     query_start, query_end, reference_start, reference_end, cigar_string = parse_cigar(sam_cigar, reference_pos)
 

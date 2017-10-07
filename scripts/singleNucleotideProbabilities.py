@@ -12,6 +12,17 @@ import glob
 import shutil
 
 
+READ_NAME_KEY = "read_name"
+FAST5_NAME_KEY = "fast5_name"
+LENGTH_KEY = "length"
+CONSENSUS_IDENTITY_KEY = "consensus_identity"
+POSTERIOR_IDENTITY_KEY = "posterior_identity"
+POSITIVE_STRAND_KEY = "positive_strand"
+ALIGNED_IDENTITY_KEY="aligned_identity"
+NO_GAP_ALIGNED_IDENTITY_KEY="no_gap_aligned_identity"
+
+VALID_IDENTITY_RATIO = .85
+
 def parse_args():
     parser = ArgumentParser(description=__doc__)
 
@@ -84,13 +95,14 @@ def build_fast5_to_read_id_dict(fast5_locations):
         fast5_to_read_id[fast5_id] = read_id
     return fast5_to_read_id
 
-VALID_IDENTITY_RATIO = .85
-def validate_snp_directory(snp_directory, reference_sequence_path,
-                           print_summary=False, move_files=True, attempt_reversal=False):
+
+def validate_snp_directory(snp_directory, reference_sequence_path, alignment_sam_location=None,
+                           print_summary=False, move_files=True, make_plots=False):
     # prep
-    all_identities = list()
+    all_consensus_identities = list()
+    all_posterior_identities = list()
     all_lengths = list()
-    all_identity_ratios = list()
+    all_summaries = list()
     full_reference_sequence = get_first_sequence(reference_sequence_path).upper()
     files = glob.glob(os.path.join(snp_directory, "*.tsv"))
     if len(files) == 0:
@@ -102,10 +114,9 @@ def validate_snp_directory(snp_directory, reference_sequence_path,
     # for rewriting
     if move_files:
         new_file_destination = snp_directory[:-1] if snp_directory.endswith("/") else snp_directory
-        new_file_destination += ".improved" if attempt_reversal else ".filtered"
+        new_file_destination += ".filtered"
         if not os.path.isdir(new_file_destination): os.mkdir(new_file_destination)
         print("[singleNucleotideProbabilities] Copying files into {}\n".format(new_file_destination))
-        rewritten_files = 0
     else:
         new_file_destination = None
 
@@ -116,12 +127,17 @@ def validate_snp_directory(snp_directory, reference_sequence_path,
     norw_cnt = 0
 
     for file in files:
-        identity, length, problem = validate_snp_file(file, full_reference_sequence,
+        summary, problem = validate_snp_file(file, full_reference_sequence,
                                                       print_sequences=False, print_summary=print_summary)
-        ratio = 1.0 * identity / length
-        all_identities.append(identity)
+        consensus_identity = summary[CONSENSUS_IDENTITY_KEY]
+        posterior_identity = summary[POSTERIOR_IDENTITY_KEY]
+        length = summary[LENGTH_KEY]
+        consensus_ratio = 1.0 * consensus_identity / length
+        posterior_ratio = 1.0 * posterior_identity / length
+        all_consensus_identities.append(consensus_identity)
+        all_posterior_identities.append(posterior_identity)
         all_lengths.append(length)
-        all_identity_ratios.append(ratio)
+        all_summaries.append(summary)
 
         if move_files:
             if problem:
@@ -130,50 +146,95 @@ def validate_snp_directory(snp_directory, reference_sequence_path,
                 continue
             # make a new file
             new_file = os.path.join(new_file_destination, os.path.basename(file))
-            if ratio < VALID_IDENTITY_RATIO:
-                if attempt_reversal:
-                    rewrite_snp_file(file, new_file)
-                    rewritten_files += 1
-                    identity, length, _ = validate_snp_file(new_file, full_reference_sequence,
-                                                         print_sequences=False, print_summary=False)
-                    ratio = 1.0 * identity / length
-                    is_better = ratio >= VALID_IDENTITY_RATIO
-                    print("{}:\trewritten file has {} length, {} identity, and ratio {}:" .format(
-                        os.path.basename(file), length, identity, ratio))
-                    if is_better:
-                        rewr_cnt += 1
-                        print("{}:\trewritten file is acceptable".format( os.path.basename(file)))
-                    else:
-                        os.remove(new_file)
-                        norw_cnt += 1
-                        rewritten_files -= 1
-                        print("{}:\trewritten file is still not acceptable.  removed from destination.".format(
-                            os.path.basename(file)))
-                else:
-                    print("{}:\tfile identity ratio is below threshold {}".format(
-                        os.path.basename(file), VALID_IDENTITY_RATIO))
-                    norw_cnt += 1
+            if consensus_ratio < VALID_IDENTITY_RATIO:
+                print("{}:\tfile identity ratio is below threshold {}".format(
+                    os.path.basename(file), VALID_IDENTITY_RATIO))
+                norw_cnt += 1
             else:
+
                 shutil.copyfile(file, new_file)
                 orig_cnt += 1
 
     # printing results
     print("\n[singleNucleotideProbabilities] Summary of {} files:".format(len(files)))
-    print("\tAVG Identity:       {}".format(np.mean(all_identities)))
-    print("\tAVG Length:         {}".format(np.mean(all_lengths)))
-    print("\tAVG Identity Ratio: {}".format(np.mean(all_identity_ratios)))
-    print("\tIdentity Ratio:     {}".format(1.0 * sum(all_identities) / sum(all_lengths)))
+    print("\tAVG Identity:             {}".format(np.mean(all_consensus_identities)))
+    print("\tAVG Length:               {}".format(np.mean(all_lengths)))
+    print("\tPosterior Identity Ratio: {}".format(1.0 * sum(all_posterior_identities) / sum(all_lengths)))
+    print("\tConsensus Identity Ratio: {}".format(1.0 * sum(all_consensus_identities) / sum(all_lengths)))
+
+    # forward and backward differences
+    forwards = list(filter(lambda x: x[POSITIVE_STRAND_KEY] is not None and x[POSITIVE_STRAND_KEY], all_summaries))
+    backwards = list(filter(lambda x: x[POSITIVE_STRAND_KEY] is not None and not x[POSITIVE_STRAND_KEY], all_summaries))
+    if len(forwards) != 0:
+        forward_consensus_iden = np.sum(list(map(lambda x: float(x[CONSENSUS_IDENTITY_KEY]), forwards))) / \
+                                 np.sum(list(map(lambda x: x[LENGTH_KEY], forwards)))
+        print("\tForward Identity Ratio:   {} ({})".format(forward_consensus_iden, len(forwards)))
+    if len(backwards) != 0:
+        backward_consensus_iden = np.sum(list(map(lambda x: float(x[CONSENSUS_IDENTITY_KEY]), backwards))) / \
+                                 np.sum(list(map(lambda x: x[LENGTH_KEY], backwards)))
+        print("\tBackward Identity Ratio:  {} ({})".format(backward_consensus_iden, len(backwards)))
+
+    # analyze new ones if filtered
     if new_file_destination is not None:
         total_cnt = orig_cnt + prob_cnt + rewr_cnt + norw_cnt
         print("[singleNucleotideProbabilities] Summary of rewriting:")
-        print("\tIncl - Original:        {} ({}%)".format(orig_cnt, int(100 * orig_cnt / total_cnt)))
-        if attempt_reversal:
-            print("\tIncl - Rewritten:       {} ({}%)".format(rewr_cnt, int(100 * rewr_cnt / total_cnt)))
-        print("\tRem  - SNP Prob:        {} ({}%)".format(prob_cnt, int(100 * prob_cnt / total_cnt)))
+        print("\tIncluded:               {} ({}%)".format(orig_cnt, int(100 * orig_cnt / total_cnt)))
         print("\tRem  - Below Threshold: {} ({}%)".format(norw_cnt, int(100 * norw_cnt / total_cnt)))
+        print("\tRem  - SNP Prob:        {} ({}%)".format(prob_cnt, int(100 * prob_cnt / total_cnt)))
         print("\n[singleNucleotideProbabilities] rewrote {} ({}%) files.  Rerunning validation."
-              .format(rewritten_files, int(100 * rewritten_files / len(files))))
-        validate_snp_directory(new_file_destination, reference_sequence_path, print_summary=False, move_files=False)
+              .format(orig_cnt, int(100 * orig_cnt / len(files))))
+        validate_snp_directory(new_file_destination, reference_sequence_path, print_summary=False, move_files=False,
+                               make_plots=False)
+
+    if make_plots:
+        if alignment_sam_location is None:
+            print("\n[singleNucleotideProbabilities] Cannot make plots without alignment_sam_location")
+            return
+        else:
+            print("\n[singleNucleotideProbabilities] Generating plots for {} forward- and {} backwards-aligned reads"
+                  .format(len(forwards), len(backwards)))
+
+        #get the data we need
+        missing_reads = 0
+        min_read = 1
+        min_signal = 1
+        read_identities = get_read_identities_from_sam(alignment_sam_location, reference_string=full_reference_sequence)
+        for read in all_summaries:
+            if read[READ_NAME_KEY] in read_identities:
+                read[NO_GAP_ALIGNED_IDENTITY_KEY] = read_identities[read[READ_NAME_KEY]][NO_GAP_ALIGNED_IDENTITY_KEY]
+                min_read = min(min_read, read[NO_GAP_ALIGNED_IDENTITY_KEY])
+                min_signal = min(min_signal, 1.0 * read[POSTERIOR_IDENTITY_KEY] / read[LENGTH_KEY])
+            else:
+                missing_reads += 1
+                read[NO_GAP_ALIGNED_IDENTITY_KEY] = -1 # doesn't appear on the plot
+                (forwards if read[POSITIVE_STRAND_KEY] else backwards).remove(read)
+        if missing_reads > 0:
+            print("[singleNucleotideProbabilities] Missing {} / {} reads in {}"
+                  .format(missing_reads, len(all_summaries), alignment_sam_location))
+
+        # plot it
+        import matplotlib.pyplot as plt
+
+        # points
+        fwd_read = list()
+        fwd_signal = list()
+        bwd_read = list()
+        bwd_signal = list()
+        for read in forwards:
+            fwd_read.append(read[NO_GAP_ALIGNED_IDENTITY_KEY])
+            fwd_signal.append(1.0 * read[POSTERIOR_IDENTITY_KEY] / read[LENGTH_KEY])
+        for read in backwards:
+            bwd_read.append(read[NO_GAP_ALIGNED_IDENTITY_KEY])
+            bwd_signal.append(1.0 * read[POSTERIOR_IDENTITY_KEY] / read[LENGTH_KEY])
+
+        f, = plt.plot(fwd_read, fwd_signal, 'b.', alpha=.25, label="Forward Strand")
+        b, = plt.plot(bwd_read, bwd_signal, 'r.', alpha=.25, label="Backward Strand")
+        plt.axis([max(0,min_read-(1-min_read)*.1),1,max(0,min_signal-(1-min_signal)*.1),1])
+        plt.title("Identities")
+        plt.legend(handles=[f, b])
+        plt.xlabel("Read Alignment Identity")
+        plt.ylabel("Signal Alignment Identity")
+        plt.show()
 
 
 
@@ -197,6 +258,7 @@ def rewrite_snp_file(snp_file, output_file_location):
 def validate_snp_file(snp_file, full_reference_sequence, print_sequences=False, print_summary=False):
     identifier = os.path.basename(snp_file)
     consensus_sequence = list()
+    all_probabilities = list()
     header_positions = list()
     header_characters = list()
     first_pos = None
@@ -204,11 +266,22 @@ def validate_snp_file(snp_file, full_reference_sequence, print_sequences=False, 
     problem = False
     duplicated_positions = 0
     unspecified_positions = 0
+
+    forward = None
+    read_name = None
+    fast5_name =  None
     with open(snp_file, 'r') as snp:
         for line in snp:
             if line.startswith("##"):
+                if "strand" in line:
+                    forward = "template" in line
+                elif "read_id" in line:
+                    read_name = line.split(":")[1].strip()
+                elif "fast5_input" in line:
+                    fast5_name = line.split(":")[1].strip()
                 continue
             elif line.startswith("#"):
+                identifier = "{}/{}".format(read_name, fast5_name)
                 line = line.split("\t")
                 i = 0
                 for l in line:
@@ -228,32 +301,42 @@ def validate_snp_file(snp_file, full_reference_sequence, print_sequences=False, 
                         duplicated_positions += 1
                         continue
                     while last_pos + 1 < pos:
+                        probabilities = dict()
+                        for char in header_characters:
+                            probabilities[char] = 0.0
+                        all_probabilities.append(probabilities)
                         consensus_sequence.append("-")
                         unspecified_positions += 1
                         last_pos += 1
                 last_pos = pos
+                #probabilities
+                probabilities = dict()
                 #consensus
                 max_prob = -1.0
                 max_prob_idx = None
                 idx = 0
                 for pos in header_positions:
                     prob = float(line[pos].strip())
+                    probabilities[header_characters[idx]] = prob
                     if prob > max_prob:
                         max_prob = prob
                         max_prob_idx = idx
                     idx += 1
                 consensus_sequence.append(header_characters[max_prob_idx])
+                all_probabilities.append(probabilities)
 
     # get sequences
     consensus_sequence = "".join(consensus_sequence)
-    reference_sequence = full_reference_sequence[min(first_pos, last_pos):max(first_pos, last_pos)+1]
+    reference_sequence = full_reference_sequence[min(first_pos, last_pos):max(first_pos, last_pos)+1].upper()
 
     # this is our quality metric
     length = 0
     identity = 0
-    for c, r in zip(consensus_sequence, reference_sequence):
+    posterior_identity = 0.0
+    for c, r, p in zip(consensus_sequence, reference_sequence, all_probabilities):
         length += 1
         if c == r: identity += 1
+        posterior_identity += p[r]
 
     # for separating results
     if print_sequences or print_summary: print("")
@@ -275,10 +358,65 @@ def validate_snp_file(snp_file, full_reference_sequence, print_sequences=False, 
         print("\tcomplement: {}".format(reverse_complement(consensus_sequence, complement=True, reverse=False)))
 
     if print_summary:
-        print("%s:\tlength:%8d\t\tidentity:%8d\t\tratio:%f" % (identifier, length, identity, 1.0*identity/length))
+        strand_char = " " if forward is None else ("+" if forward else "-")
+        print("%s:\tdirection: %s\tlength:%8d\t\tconsensus identity:%8d (%8f)\t\tposterior_identity:%8d (%8f)" %
+              (identifier, strand_char, length, identity, 1.0*identity/length,
+               int(posterior_identity), posterior_identity/length))
 
-    return identity, length, problem
+    summary = {
+        READ_NAME_KEY: read_name,
+        FAST5_NAME_KEY: fast5_name,
+        LENGTH_KEY: length,
+        CONSENSUS_IDENTITY_KEY: identity,
+        POSTERIOR_IDENTITY_KEY: posterior_identity,
+        POSITIVE_STRAND_KEY: forward
+    }
+    return summary, problem
 
+
+def get_read_identities_from_sam(sam_location, reference_string=None, reference_location=None):
+    if reference_string is None:
+        reference_string = get_first_sequence(reference_location)
+
+    import pysam
+    sam = pysam.Samfile(sam_location, 'r')
+    read_to_identity = dict()
+
+    for aligned_segment in sam:
+        if not aligned_segment.is_secondary and not aligned_segment.is_unmapped:
+            query_name = aligned_segment.qname
+            read = aligned_segment.query_alignment_sequence
+            aligned_tuples = aligned_segment.get_aligned_pairs()
+
+            # counts
+            len = 0
+            no_gap_len = 0
+            iden = 0.0
+            no_gap_iden = 0.0
+
+            # iterate
+            for tuple in aligned_tuples:
+                # get characters
+                if tuple[0] is None: read_char = '-'
+                else: read_char = read[tuple[0]]
+                if tuple[1] is None: ref_char = '-'
+                else: ref_char = reference_string[tuple[1]]
+
+                #counts
+                len += 1
+                if read_char == ref_char: iden += 1
+                if read_char != '-' and ref_char != '-':
+                    no_gap_len += 1
+                    if read_char == ref_char: no_gap_iden += 1
+
+            # save
+            read_to_identity[query_name] = {
+                READ_NAME_KEY: query_name,
+                ALIGNED_IDENTITY_KEY: iden / len,
+                NO_GAP_ALIGNED_IDENTITY_KEY: no_gap_iden/ no_gap_len
+            }
+
+    return read_to_identity
 
 
 def discover_single_nucleotide_probabilities(working_folder, kmer_length, reference_map, reference_sequence_string,
@@ -437,7 +575,10 @@ def main(args):
             full_reference_sequence = get_first_sequence(args.ref).upper()
             validate_snp_file(args.validation_file, full_reference_sequence, print_sequences=True, print_summary=True)
         elif os.path.isdir(args.validation_file):
-            validate_snp_directory(args.validation_file, args.ref, print_summary=True)
+            validate_snp_directory(args.validation_file, args.ref, print_summary=False, move_files=False,
+                                   make_plots=True, alignment_sam_location=args.alignment_sam)
+            # validate_snp_directory(args.validation_file, args.ref, print_summary=True, make_plots=True,
+            #                        alignment_sam_location=args.alignment_sam)
         else:
             print("[error] got invalid validation location: {}".format(args.validation_file))
         return 0
